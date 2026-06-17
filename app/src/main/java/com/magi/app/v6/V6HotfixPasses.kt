@@ -106,35 +106,56 @@ object V6HotfixPasses {
         work = rAsg.newSchedule.copy2D()
         logs.addAll(rAsg.logs)
 
-        onPhase("後処理 循環交換(k=2,3)")
-        val rCyc = applyCyclicSwapPolish(state, work, maxPasses = 4, shouldStop = shouldStop)
-        work = rCyc.newSchedule.copy2D()
-        logs.addAll(rCyc.logs)
-
-        // [研磨可否の検証] c1/c3系ソフト研磨の前後を測る基準（c1研磨直前のスナップショット）。
+        // [研磨可否の検証] ソフト研磨クラスタ(循環 / c1 / c1回転 / c3 / c3回転)の前後を測る基準。
         val preSoftRep = UnifiedViolationChecker.check(state, work)
 
-        onPhase("後処理 期間要件(c1)研磨")
-        val rC1 = applyC1WindowPolish(state, work, maxPasses = 3, shouldStop = shouldStop)
-        work = rC1.newSchedule.copy2D()
-        logs.addAll(rC1.logs)
+        // [パス間フィックスポイント再ループ] 各パスは内部で自己収束するが、別パスの変更が他パスの改善を
+        //   再び開く（例: c3の組替えで新たなc1充足余地が出る）。クラスタ全体を「1巡で1手も採用されなく
+        //   なるまで」最大 maxRounds 巡だけ繰り返す。全パスkeep-best＝退化なし。shouldStop と maxRounds で
+        //   上限。違反セル指向なので空巡は即終了（コスト0）。
+        val c3Anchor = setOf("vio-c3", "vio-c3m", "vio-c3mn")
+        val c1Anchor = setOf("vio-c1")
+        val maxRounds = 4
+        var round = 0
+        var totalCyc = 0; var totalC1 = 0; var totalC1r = 0; var totalC3 = 0; var totalC3r = 0
+        while (round < maxRounds && !shouldStop()) {
+            var roundApplied = 0
 
-        onPhase("後処理 連続規則(c3/c3m)研磨")
-        val rC3 = applyC3SequencePolish(state, work, maxPasses = 3, shouldStop = shouldStop)
-        work = rC3.newSchedule.copy2D()
-        logs.addAll(rC3.logs)
+            onPhase("後処理 循環交換(k=2,3) [巡${round + 1}]")
+            val rCyc = applyCyclicSwapPolish(state, work, maxPasses = 4, shouldStop = shouldStop)
+            work = rCyc.newSchedule.copy2D(); totalCyc += rCyc.applied; roundApplied += rCyc.applied
+            if (round == 0) logs.addAll(rCyc.logs)
 
-        onPhase("後処理 連続規則(c3系)3者ブロック回転研磨")
-        val rC3r = applyC3BlockRotationPolish(state, work, maxPasses = 2, shouldStop = shouldStop)
-        work = rC3r.newSchedule.copy2D()
-        logs.addAll(rC3r.logs)
+            onPhase("後処理 期間要件(c1)研磨 [巡${round + 1}]")
+            val rC1 = applyC1WindowPolish(state, work, maxPasses = 3, shouldStop = shouldStop)
+            work = rC1.newSchedule.copy2D(); totalC1 += rC1.applied; roundApplied += rC1.applied
+            if (round == 0) logs.addAll(rC1.logs)
 
-        // [研磨可否の検証ログ] ソフトc3系3種(c3/c3m/c3mn)とc1の増減・採用数・HARD不変を1行に集約。
-        // 採用0かつ対象>0なら「頭打ち(改善手なし=正常)」、対象0なら「対象なし」と明示し、可否を判定可能にする。
+            onPhase("後処理 期間要件(c1)3者回転研磨 [巡${round + 1}]")
+            val rC1r = applyBlockRotationPolish(state, work, c1Anchor, "C1Rotate", maxPasses = 2, shouldStop = shouldStop)
+            work = rC1r.newSchedule.copy2D(); totalC1r += rC1r.applied; roundApplied += rC1r.applied
+            if (round == 0) logs.addAll(rC1r.logs)
+
+            onPhase("後処理 連続規則(c3系)研磨 [巡${round + 1}]")
+            val rC3 = applyC3SequencePolish(state, work, maxPasses = 3, shouldStop = shouldStop)
+            work = rC3.newSchedule.copy2D(); totalC3 += rC3.applied; roundApplied += rC3.applied
+            if (round == 0) logs.addAll(rC3.logs)
+
+            onPhase("後処理 連続規則(c3系)3者回転研磨 [巡${round + 1}]")
+            val rC3r = applyBlockRotationPolish(state, work, c3Anchor, "C3Rotate", maxPasses = 2, shouldStop = shouldStop)
+            work = rC3r.newSchedule.copy2D(); totalC3r += rC3r.applied; roundApplied += rC3r.applied
+            if (round == 0) logs.addAll(rC3r.logs)
+
+            round++
+            if (roundApplied == 0) break   // この巡で1手も採用なし＝joint局所最適に到達
+        }
+
+        // [研磨可否の検証ログ] ソフトc3系3種(c3/c3m/c3mn)とc1の増減・採用数・HARD不変・巡回数を集約。
+        // 採用0かつ対象>0なら「頭打ち(改善手なし=正常)」、対象0なら「対象なし」と明示。
         run {
             val softAfter = UnifiedViolationChecker.check(state, work)
             fun bd(r: ViolationReport, k: String) = r.breakdown[k] ?: 0
-            val adopted = rC1.applied + rC3.applied + rC3r.applied
+            val adopted = totalCyc + totalC1 + totalC1r + totalC3 + totalC3r
             val targets = bd(preSoftRep, "c1") + bd(preSoftRep, "c3") + bd(preSoftRep, "c3m") + bd(preSoftRep, "c3mn")
             val verdict = when {
                 adopted > 0 -> "有効(採用${adopted}手)"
@@ -143,12 +164,12 @@ object V6HotfixPasses {
             }
             val hardNote = if (softAfter.hard == preSoftRep.hard) "不変" else "変化${preSoftRep.hard}->${softAfter.hard}!"
             logs.add(MirrorLog(tag = "SoftPolishVerify", message =
-                "ソフトc3系研磨 可否=$verdict | c1 ${bd(preSoftRep, "c1")}->${bd(softAfter, "c1")}" +
+                "ソフトc1/c3系研磨 可否=$verdict (${round}巡) | c1 ${bd(preSoftRep, "c1")}->${bd(softAfter, "c1")}" +
                     " / c3 ${bd(preSoftRep, "c3")}->${bd(softAfter, "c3")}" +
                     " / c3m ${bd(preSoftRep, "c3m")}->${bd(softAfter, "c3m")}" +
                     " / c3mn ${bd(preSoftRep, "c3mn")}->${bd(softAfter, "c3mn")}" +
                     " | HARD $hardNote / total ${preSoftRep.total}->${softAfter.total}" +
-                    " (内訳 c1:${rC1.applied} c3-2者:${rC3.applied} c3-3者回転:${rC3r.applied})"))
+                    " (採用内訳 循環:${totalCyc} c1:${totalC1} c1回転:${totalC1r} c3:${totalC3} c3回転:${totalC3r})"))
         }
 
         onPhase("後処理 グループ内シフト回数の平準化")
@@ -317,6 +338,14 @@ object V6HotfixPasses {
         while (pass < maxPasses) {
             if (shouldStop()) break
             var improved = false
+            // [違反セル指向] c3系で違反している職員のみを起点に絞る。c3は職員ごと→2者交換で改善する手は
+            //   必ず違反職員を含む＝取りこぼし無し(ロスレス)。空なら即終了でコスト0。
+            val rep0 = if (pass == 0) before else UnifiedViolationChecker.check(state, work)
+            val anchorStaff = HashSet<Int>()
+            for ((key, cls) in rep0.violations) {
+                if (cls == "vio-c3" || cls == "vio-c3m" || cls == "vio-c3mn") anchorStaff.add(key.substringBefore(",").toIntOrNull() ?: continue)
+            }
+            if (anchorStaff.isEmpty()) break
             for (w in windows) {
                 if (p.T < w) continue
                 for (j in 0..p.T - w) {
@@ -324,6 +353,7 @@ object V6HotfixPasses {
                     for (i in 0 until p.S) {
                         if ((0 until w).any { !movable(i, j + it) }) continue
                         for (i2 in i + 1 until p.S) {
+                            if (i !in anchorStaff && i2 !in anchorStaff) continue   // 違反職員を含む対のみ
                             if ((0 until w).any { !movable(i2, j + it) }) continue
                             var feasible = true; var same = true
                             for (t in 0 until w) {
@@ -357,7 +387,14 @@ object V6HotfixPasses {
      * 採用（keep-best＝退化なし）。重み・パラメータは不変。違反セル指向なので低コスト。
      * 2回の2者交換に分解すると中間で悪化するため山登りでは越えられない局面を、回転1手で跨ぐのが狙い。
      */
-    fun applyC3BlockRotationPolish(state: MagiState, schedule: Array<IntArray>, maxPasses: Int = 2, shouldStop: () -> Boolean = { false }): CyclicSwapResult {
+    /**
+     * [ソフト研磨・3者回転] 指定クラス(anchorClasses)で違反しているセルを起点に、3職員×連日(2-3日)の
+     * ブロック「回転」を試す。2者ブロック入替/同日k=3巡回では到達できない3者×窓の組替えを、各日の
+     * (日,シフト)人数を保ったまま（=被覆/HARD不変）行い、実目的(UnifiedViolationChecker)で改善時のみ
+     * 採用（keep-best＝退化なし）。c1・c3系どちらの違反起点にも使える汎用版。重み・パラメータ不変。
+     * 2回の2者交換に分解すると中間で悪化するため山登りでは越えられない局面を、回転1手で跨ぐのが狙い。
+     */
+    fun applyBlockRotationPolish(state: MagiState, schedule: Array<IntArray>, anchorClasses: Set<String>, tag: String, maxPasses: Int = 2, shouldStop: () -> Boolean = { false }): CyclicSwapResult {
         val p = Problem(state)
         val work = normalizeSchedule(schedule, p)
         val before = UnifiedViolationChecker.check(state, work)
@@ -368,13 +405,11 @@ object V6HotfixPasses {
         var pass = 0
         while (pass < maxPasses) {
             if (shouldStop()) break
-            // c3系で違反している職員(=回転の起点)を収集。無ければ即終了（コスト0）。
+            // 指定クラスで違反している職員(=回転の起点)を収集。無ければ即終了（コスト0）。
             val rep0 = if (pass == 0) before else UnifiedViolationChecker.check(state, work)
             val anchorStaff = HashSet<Int>()
             for ((key, cls) in rep0.violations) {
-                if (cls == "vio-c3" || cls == "vio-c3m" || cls == "vio-c3mn") {
-                    anchorStaff.add(key.substringBefore(",").toIntOrNull() ?: continue)
-                }
+                if (cls in anchorClasses) anchorStaff.add(key.substringBefore(",").toIntOrNull() ?: continue)
             }
             if (anchorStaff.isEmpty()) break
             var improved = false
@@ -412,8 +447,9 @@ object V6HotfixPasses {
             pass++
             if (!improved) break
         }
-        val logs = listOf(MirrorLog(tag = "C3Rotate",
-            message = "連続規則c3系研磨(3者回転): c3 ${before.breakdown["c3"] ?: 0}->${bestRep.breakdown["c3"] ?: 0}" +
+        val logs = listOf(MirrorLog(tag = tag,
+            message = "$tag 3者回転研磨: c1 ${before.breakdown["c1"] ?: 0}->${bestRep.breakdown["c1"] ?: 0}" +
+                " / c3 ${before.breakdown["c3"] ?: 0}->${bestRep.breakdown["c3"] ?: 0}" +
                 " / c3m ${before.breakdown["c3m"] ?: 0}->${bestRep.breakdown["c3m"] ?: 0}" +
                 " / c3mn ${before.breakdown["c3mn"] ?: 0}->${bestRep.breakdown["c3mn"] ?: 0}" +
                 " / total ${before.total}->${bestRep.total} HARD ${before.hard}->${bestRep.hard} 採用${applied}回"))
@@ -574,11 +610,20 @@ object V6HotfixPasses {
         while (pass < maxPasses) {
             if (shouldStop()) break
             var improved = false
+            // [違反セル指向] c1で違反している職員のみを起点に絞る。c1は職員ごと→改善手は必ず違反職員を
+            //   含む＝ロスレス。空なら即終了でコスト0。
+            val rep0 = if (pass == 0) before else UnifiedViolationChecker.check(state, work)
+            val anchorStaff = HashSet<Int>()
+            for ((key, cls) in rep0.violations) {
+                if (cls == "vio-c1") anchorStaff.add(key.substringBefore(",").toIntOrNull() ?: continue)
+            }
+            if (anchorStaff.isEmpty()) break
             for (c in p.cons1) {
                 val x = c.shiftIdx; val d = c.day1; val n = c.day2
                 if (x !in 0 until p.K || d <= 0) continue
                 for (i in 0 until p.S) {
                     if (shouldStop()) break
+                    if (i !in anchorStaff) continue
                     if (!p.canDo(i, x)) continue
                     for (j in 0 until p.T) {
                         if (work[i][j] == x || !movable(i, j)) continue
