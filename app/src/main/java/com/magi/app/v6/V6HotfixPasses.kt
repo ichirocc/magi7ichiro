@@ -111,6 +111,9 @@ object V6HotfixPasses {
         work = rCyc.newSchedule.copy2D()
         logs.addAll(rCyc.logs)
 
+        // [研磨可否の検証] c1/c3系ソフト研磨の前後を測る基準（c1研磨直前のスナップショット）。
+        val preSoftRep = UnifiedViolationChecker.check(state, work)
+
         onPhase("後処理 期間要件(c1)研磨")
         val rC1 = applyC1WindowPolish(state, work, maxPasses = 3, shouldStop = shouldStop)
         work = rC1.newSchedule.copy2D()
@@ -125,6 +128,28 @@ object V6HotfixPasses {
         val rC3r = applyC3BlockRotationPolish(state, work, maxPasses = 2, shouldStop = shouldStop)
         work = rC3r.newSchedule.copy2D()
         logs.addAll(rC3r.logs)
+
+        // [研磨可否の検証ログ] ソフトc3系3種(c3/c3m/c3mn)とc1の増減・採用数・HARD不変を1行に集約。
+        // 採用0かつ対象>0なら「頭打ち(改善手なし=正常)」、対象0なら「対象なし」と明示し、可否を判定可能にする。
+        run {
+            val softAfter = UnifiedViolationChecker.check(state, work)
+            fun bd(r: ViolationReport, k: String) = r.breakdown[k] ?: 0
+            val adopted = rC1.applied + rC3.applied + rC3r.applied
+            val targets = bd(preSoftRep, "c1") + bd(preSoftRep, "c3") + bd(preSoftRep, "c3m") + bd(preSoftRep, "c3mn")
+            val verdict = when {
+                adopted > 0 -> "有効(採用${adopted}手)"
+                targets == 0 -> "対象なし"
+                else -> "頭打ち(採用0=改善手なし・正常)"
+            }
+            val hardNote = if (softAfter.hard == preSoftRep.hard) "不変" else "変化${preSoftRep.hard}->${softAfter.hard}!"
+            logs.add(MirrorLog(tag = "SoftPolishVerify", message =
+                "ソフトc3系研磨 可否=$verdict | c1 ${bd(preSoftRep, "c1")}->${bd(softAfter, "c1")}" +
+                    " / c3 ${bd(preSoftRep, "c3")}->${bd(softAfter, "c3")}" +
+                    " / c3m ${bd(preSoftRep, "c3m")}->${bd(softAfter, "c3m")}" +
+                    " / c3mn ${bd(preSoftRep, "c3mn")}->${bd(softAfter, "c3mn")}" +
+                    " | HARD $hardNote / total ${preSoftRep.total}->${softAfter.total}" +
+                    " (内訳 c1:${rC1.applied} c3-2者:${rC3.applied} c3-3者回転:${rC3r.applied})"))
+        }
 
         onPhase("後処理 グループ内シフト回数の平準化")
         val rGeq = applyGroupShiftEqualizePolish(state, work, maxPasses = 2, shouldStop = shouldStop)
@@ -318,7 +343,10 @@ object V6HotfixPasses {
             if (!improved) break
         }
         val logs = listOf(MirrorLog(tag = "C3Polish",
-            message = "連続規則(c3/c3m/c3n/c3mn)研磨・2-3日連結スワップ: total ${before.total}->${bestRep.total} 採用${applied}回"))
+            message = "連続規則c3系研磨(2者ブロック): c3 ${before.breakdown["c3"] ?: 0}->${bestRep.breakdown["c3"] ?: 0}" +
+                " / c3m ${before.breakdown["c3m"] ?: 0}->${bestRep.breakdown["c3m"] ?: 0}" +
+                " / c3mn ${before.breakdown["c3mn"] ?: 0}->${bestRep.breakdown["c3mn"] ?: 0}" +
+                " / total ${before.total}->${bestRep.total} HARD ${before.hard}->${bestRep.hard} 採用${applied}回"))
         return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
     }
 
@@ -385,7 +413,10 @@ object V6HotfixPasses {
             if (!improved) break
         }
         val logs = listOf(MirrorLog(tag = "C3Rotate",
-            message = "連続規則(c3系)研磨・3者×2-3日ブロック回転: total ${before.total}->${bestRep.total} 採用${applied}回"))
+            message = "連続規則c3系研磨(3者回転): c3 ${before.breakdown["c3"] ?: 0}->${bestRep.breakdown["c3"] ?: 0}" +
+                " / c3m ${before.breakdown["c3m"] ?: 0}->${bestRep.breakdown["c3m"] ?: 0}" +
+                " / c3mn ${before.breakdown["c3mn"] ?: 0}->${bestRep.breakdown["c3mn"] ?: 0}" +
+                " / total ${before.total}->${bestRep.total} HARD ${before.hard}->${bestRep.hard} 採用${applied}回"))
         return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
     }
 
@@ -567,7 +598,8 @@ object V6HotfixPasses {
             if (!improved) break
         }
         val logs = listOf(MirrorLog(tag = "C1Polish",
-            message = "期間要件(c1)研磨: total ${before.total}->${bestRep.total} 採用${applied}回"))
+            message = "期間要件(c1)研磨: c1 ${before.breakdown["c1"] ?: 0}->${bestRep.breakdown["c1"] ?: 0} / total ${before.total}->${bestRep.total} HARD ${before.hard}->${bestRep.hard} 採用${applied}回" +
+                (if (applied == 0 && (before.breakdown["c1"] ?: 0) > 0) " [頭打ち=改善手なし]" else "")))
         return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
     }
 
