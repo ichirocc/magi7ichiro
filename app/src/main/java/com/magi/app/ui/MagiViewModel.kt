@@ -961,6 +961,34 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         applyStructure(st.copy(wishes = st.wishes - "$i,$j"))
     }
 
+    /** [一括] スタッフ(null=全員)×日群に希望 k を一括設定。Undo1回・再チェック1回。 */
+    fun setWishesForDays(staffIdx: Int?, days: List<Int>, k: Int) {
+        val st = state ?: return
+        if (days.isEmpty() || k !in st.shifts.indices) return
+        val m = st.wishes.toMutableMap()
+        val staffRange = if (staffIdx != null) listOf(staffIdx) else st.staff.indices.toList()
+        for (i in staffRange) for (j in days) if (i in st.staff.indices && j in 0 until st.dayCount) m["$i,$j"] = k
+        applyStructure(st.copy(wishes = m))
+    }
+
+    /** [一括] スタッフ(null=全員)×日群の希望を一括削除。 */
+    fun clearWishesForDays(staffIdx: Int?, days: List<Int>) {
+        val st = state ?: return
+        if (days.isEmpty()) return
+        val m = st.wishes.toMutableMap()
+        val staffRange = if (staffIdx != null) listOf(staffIdx) else st.staff.indices.toList()
+        for (i in staffRange) for (j in days) m.remove("$i,$j")
+        if (m.size == st.wishes.size) return
+        applyStructure(st.copy(wishes = m))
+    }
+
+    /** [一括] すべての希望を削除。 */
+    fun clearAllWishes() {
+        val st = state ?: return
+        if (st.wishes.isEmpty()) return
+        applyStructure(st.copy(wishes = emptyMap()))
+    }
+
     // ---- colors: シフトの表示色 shiftColors[kigou]="#rrggbb"（表示専用）----
     data class ShiftColorView(val kigou: String, val name: String, val hex: String, val custom: Boolean)
 
@@ -1431,6 +1459,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             shiftTextHex = st.shifts.map { V6WebCompat.pickTextColor(V6WebCompat.resolveShiftColor(it.kigou, it.name, st.shiftColors[it.kigou])) },
             violationColorHex = st.shiftColors["__vio__"] ?: "",
             schedule = schedule.map { it.toList() },
+            wishes = st.wishes,
             resultSchedule = resultSchedule?.map { it.toList() } ?: emptyList(),   // [B1] 確定結果(ws6)
             hasResultSnapshot = resultSchedule != null,                            // [B1]
             v6 = v6,

@@ -176,36 +176,84 @@ internal fun ShiftPickerSheet(
     onDismiss: () -> Unit,
 ) {
     val (i, j) = cell
+    val cs = MaterialTheme.colorScheme
     val sheetState = rememberModalBottomSheetState()
     val allowed = remember(cell) { vm.allowedShiftsFor(i).toList() }
     val current = ui.schedule.getOrNull(i)?.getOrNull(j) ?: -1
+    val wish = ui.wishes["$i,$j"]
+    var mode by remember(cell) { mutableIntStateOf(0) } // 0=割当, 1=希望
+    val name = ui.staffNames.getOrNull(i) ?: i.toString()
+    fun sym(k: Int?): String = k?.let { ui.shiftSymbols.getOrNull(it) } ?: "—"
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text("$name ・ ${j + 1}日", style = MaterialTheme.typography.titleMedium)
+            // 凝縮ステータス: 現在の割当 + 希望
+            Surface(color = cs.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("現在の割当  ${sym(current)}", style = MaterialTheme.typography.bodyMedium)
+                    val wt = if (wish == null) "希望  未登録"
+                        else "希望  ${sym(wish)}" + (if (wish == current) "（反映済）" else "（未反映）")
+                    Text(wt, style = MaterialTheme.typography.bodyMedium,
+                        color = if (wish != null && wish != current) MagiAccent.pink else cs.onSurfaceVariant)
+                }
+            }
+            // 希望どおりにする（割当モード・未反映・担当可のときだけ）= 最頻操作を1タップ
+            if (mode == 0 && wish != null && wish != current && wish in allowed) {
+                Button(onClick = { onPick(wish) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("希望どおり ${sym(wish)} にする")
+                }
+            }
+            // 割当/希望 トグル
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("割当を変更", "希望を変更").forEachIndexed { idx, label ->
+                    val selSeg = mode == idx
+                    Box(
+                        Modifier.weight(1f).heightIn(min = 44.dp)
+                            .background(if (selSeg) cs.primaryContainer else cs.surfaceVariant, RoundedCornerShape(12.dp))
+                            .clickable { mode = idx },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, color = if (selSeg) cs.onPrimaryContainer else cs.onSurfaceVariant,
+                            fontWeight = if (selSeg) FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
+            }
             Text(
-                "${ui.staffNames.getOrNull(i) ?: i} ・ ${j + 1}日 のシフトを選ぶ",
-                style = MaterialTheme.typography.titleMedium,
+                if (mode == 0) "タップで割当を即変更。" else "タップで希望を登録/変更（即確定）。「外」=担当外（登録可・配置で違反）。",
+                style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant,
             )
-            val opts = if (allowed.isNotEmpty()) allowed else ui.shiftSymbols.indices.toList()
+            val opts = if (mode == 0) (if (allowed.isNotEmpty()) allowed else ui.shiftSymbols.indices.toList())
+                       else ui.shiftSymbols.indices.toList()
             opts.chunked(4).forEach { rowKeys ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     rowKeys.forEach { k ->
-                        val sym = ui.shiftSymbols.getOrNull(k) ?: k.toString()
-                        val sel = k == current
-                        val bg = if (sel) MaterialTheme.colorScheme.primary else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
-                        val fg = if (sel) MaterialTheme.colorScheme.onPrimary else hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")
+                        val symbol = ui.shiftSymbols.getOrNull(k) ?: k.toString()
+                        val sel = if (mode == 0) k == current else k == wish
+                        val ng = mode == 1 && k !in allowed
+                        val bg = if (sel) cs.primary else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
+                        val fg = if (sel) cs.onPrimary else hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")
                         Box(
                             Modifier
                                 .weight(1f)
                                 .heightIn(min = 56.dp)
                                 .background(bg, RoundedCornerShape(16.dp))
-                                .clickable { onPick(k) },
+                                .then(if (ng) Modifier.border(2.dp, cs.error, RoundedCornerShape(16.dp)) else Modifier)
+                                .clickable {
+                                    if (mode == 0) onPick(k) else { vm.setWish(i, j, k); onDismiss() }
+                                },
                             contentAlignment = Alignment.Center,
-                        ) { Text(sym, color = fg, fontWeight = FontWeight.Bold) }
+                        ) { Text(symbol + (if (ng) " 外" else ""), color = if (ng) cs.error else fg, fontWeight = FontWeight.Bold) }
                     }
                     repeat(4 - rowKeys.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            // 希望を削除（希望モード・登録済みのみ）
+            if (mode == 1 && wish != null) {
+                OutlinedButton(onClick = { vm.removeWish(i, j); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                    Text("希望を削除（希望なし）", color = cs.error)
                 }
             }
         }
@@ -402,7 +450,10 @@ internal fun ScheduleGrid(
                                             val symbol = if (k < 0) "·" else ui.shiftSymbols.getOrNull(k) ?: k.toString()
                                             val bg = if (k < 0) cs.surface else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
                                             val fg = if (k < 0) cs.onSurfaceVariant else hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")
-                                            Cell(symbol, vio, hard, bg, fg, vioColor, w = cellW) { onCellClick(i, j) }
+                                            val wk = ui.wishes["$i,$j"]
+                                            val wsym = wk?.let { ui.shiftSymbols.getOrNull(it) }
+                                            val wmet = wk != null && wk == k
+                                            Cell(symbol, vio, hard, bg, fg, vioColor, w = cellW, wishSym = wsym, wishMet = wmet) { onCellClick(i, j) }
                                         }
                                     }
                                 }
@@ -781,10 +832,11 @@ internal fun Modifier.violationBorder(hard: Boolean, color: Color, radiusDp: and
 
 
 @Composable
-internal fun Cell(text: String, violation: Boolean, hard: Boolean, bg: Color, fg: Color, vioColor: Color, w: androidx.compose.ui.unit.Dp = 52.dp, onClick: () -> Unit) {
+internal fun Cell(text: String, violation: Boolean, hard: Boolean, bg: Color, fg: Color, vioColor: Color, w: androidx.compose.ui.unit.Dp = 52.dp, wishSym: String? = null, wishMet: Boolean = false, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     // [UD/WCAG 4.1.2] スクリーンリーダー用の読み上げ名（色・形だけに依存しない）。
-    val a11y = "シフト ${text.ifBlank { "なし" }}" + (if (violation) (if (hard) "・必須違反" else "・要調整") else "") + "、タップで変更"
+    val wishA11y = wishSym?.let { "・希望" + it + (if (wishMet) "(反映済)" else "(未反映)") } ?: ""
+    val a11y = "シフト ${text.ifBlank { "なし" }}" + (if (violation) (if (hard) "・必須違反" else "・要調整") else "") + wishA11y + "、タップで変更"
     Box(Modifier.width(w).height(52.dp).padding(2.dp)) {
         Box(
             Modifier
@@ -808,10 +860,155 @@ internal fun Cell(text: String, violation: Boolean, hard: Boolean, bg: Color, fg
                         .border(if (hard) 1.5.dp else 2.5.dp, if (hard) cs.surface else vioColor, RoundedCornerShape(6.dp)),
                 )
             }
+            // [希望表示融合] 希望シフトをセル右下に小バッジ表示。緑=反映済(割当==希望) / 桃=未反映。
+            if (wishSym != null) {
+                val wbg = if (wishMet) MagiAccent.green else MagiAccent.pink
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(1.dp)
+                        .background(wbg, RoundedCornerShape(4.dp))
+                        .border(1.dp, cs.surface, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 3.dp),
+                ) {
+                    Text(wishSym, color = Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
+            }
         }
     }
 }
 
+
+/** [希望の一括操作] 対象範囲(曜日/期間全体) × 対象(全員/1名) × 希望シフト。登録/クリア。誤操作防止で明示確定。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun WishBulkSheet(ui: UiState, vm: MagiViewModel, presetWeekday: Int, onDismiss: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val sheetState = rememberModalBottomSheetState()
+    val days = ui.days
+    val weekdays = listOf("月", "火", "水", "木", "金", "土", "日")
+    val startDow = startDowMonFirst(ui.startDate)
+    var scope by remember { mutableIntStateOf(0) }                       // 0=この曜日, 1=期間全体
+    var weekday by remember { mutableIntStateOf(presetWeekday.coerceIn(0, 6)) }
+    var staffSel by remember { mutableIntStateOf(-1) }                   // -1=全職員, else staff index
+    var picked by remember { mutableIntStateOf(-1) }                     // 選択中の希望シフト
+    var showStaff by remember { mutableStateOf(false) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    val targetDays = if (scope == 1) (0 until days).toList()
+        else (0 until days).filter { (startDow + it) % 7 == weekday }
+    val allowed = if (staffSel >= 0) vm.allowedShiftsFor(staffSel).toList() else emptyList()
+    val targetName = if (staffSel >= 0) (ui.staffNames.getOrNull(staffSel) ?: "$staffSel") else "全職員"
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("希望シフトの一括操作", style = MaterialTheme.typography.titleMedium)
+            Text("対象範囲", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("この曜日", "期間全体").forEachIndexed { idx, label ->
+                    val s = scope == idx
+                    Box(Modifier.weight(1f).heightIn(min = 44.dp)
+                        .background(if (s) cs.primaryContainer else cs.surfaceVariant, RoundedCornerShape(12.dp))
+                        .clickable { scope = idx }, contentAlignment = Alignment.Center) {
+                        Text(label, color = if (s) cs.onPrimaryContainer else cs.onSurfaceVariant,
+                            fontWeight = if (s) FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
+            }
+            if (scope == 0) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    weekdays.forEachIndexed { idx, wd ->
+                        val s = weekday == idx
+                        Box(Modifier.weight(1f).heightIn(min = 36.dp)
+                            .background(if (s) cs.primary else cs.surfaceVariant, RoundedCornerShape(10.dp))
+                            .clickable { weekday = idx }, contentAlignment = Alignment.Center) {
+                            Text(wd, color = if (s) cs.onPrimary else cs.onSurfaceVariant,
+                                fontWeight = if (s) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
+            Text("対象 ${targetDays.size}日。既存の希望は上書き。", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            Text("対象（誰に）", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f).heightIn(min = 40.dp)
+                    .background(if (staffSel < 0) cs.primary else cs.surfaceVariant, RoundedCornerShape(12.dp))
+                    .clickable { staffSel = -1 }, contentAlignment = Alignment.Center) {
+                    Text("全職員", color = if (staffSel < 0) cs.onPrimary else cs.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                }
+                Box(Modifier.weight(1f).heightIn(min = 40.dp)
+                    .background(if (staffSel >= 0) cs.primary else cs.surfaceVariant, RoundedCornerShape(12.dp))
+                    .clickable { showStaff = true }, contentAlignment = Alignment.Center) {
+                    Text(if (staffSel >= 0) "職員：$targetName" else "職員を選ぶ",
+                        color = if (staffSel >= 0) cs.onPrimary else cs.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("希望シフト（タップで選択）", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            ui.shiftSymbols.indices.toList().chunked(3).forEach { rowKeys ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowKeys.forEach { k ->
+                        val sel = picked == k
+                        val ng = staffSel >= 0 && k !in allowed
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp)
+                            .background(if (sel) cs.primaryContainer else cs.surface, RoundedCornerShape(12.dp))
+                            .border(if (sel) 2.dp else 1.dp, if (sel) cs.primary else if (ng) cs.error else cs.outline, RoundedCornerShape(12.dp))
+                            .clickable { picked = k }, contentAlignment = Alignment.Center) {
+                            Text((ui.shiftSymbols.getOrNull(k) ?: "$k") + (if (ng) " 外" else ""),
+                                color = if (ng) cs.error else cs.onSurface, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                    repeat(3 - rowKeys.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    if (scope == 1 && staffSel < 0) confirmClearAll = true
+                    else { vm.clearWishesForDays(if (staffSel < 0) null else staffSel, targetDays); onDismiss() }
+                }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Text("この範囲を希望なしに", color = cs.error)
+                }
+                Button(onClick = {
+                    if (picked in ui.shiftSymbols.indices) {
+                        vm.setWishesForDays(if (staffSel < 0) null else staffSel, targetDays, picked); onDismiss()
+                    }
+                }, enabled = picked in ui.shiftSymbols.indices && targetDays.isNotEmpty(),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Text("適用（${targetDays.size}件）")
+                }
+            }
+            Text("※ 期間全体×全職員の「希望なし」は全削除（確認あり）。元に戻すで取消可。",
+                style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+        }
+    }
+    if (showStaff) {
+        AlertDialog(
+            onDismissRequest = { showStaff = false },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showStaff = false }) { Text("閉じる") } },
+            title = { Text("職員を選ぶ") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ui.staffNames.forEachIndexed { idx, n ->
+                        Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { staffSel = idx; showStaff = false },
+                            contentAlignment = Alignment.CenterStart) {
+                            Text(n, Modifier.padding(vertical = 8.dp))
+                        }
+                    }
+                }
+            },
+        )
+    }
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            confirmButton = { TextButton(onClick = { confirmClearAll = false; vm.clearAllWishes(); onDismiss() }) { Text("すべて削除", color = cs.error) } },
+            dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("キャンセル") } },
+            title = { Text("すべての希望を削除") },
+            text = { Text("登録済みの希望をすべて削除します。割当には影響しません。元に戻すで復元できます。") },
+        )
+    }
+}
 
 private fun Int.floorMod(m: Int): Int = if (m == 0) 0 else ((this % m) + m) % m
 

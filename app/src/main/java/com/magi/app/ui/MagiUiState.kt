@@ -44,6 +44,7 @@ data class UiState(
     val shiftTextHex: List<String> = emptyList(),
     val violationColorHex: String = "",   // 違反の表示色（空＝テーマのエラー色）。shiftColors["__vio__"] に保存。
     val schedule: List<List<Int>> = emptyList(),
+    val wishes: Map<String, Int> = emptyMap(),   // ws3 希望 "i,j"->shiftIdx（表示融合用）
     val resultSchedule: List<List<Int>> = emptyList(),   // [B1] 確定結果(ws6)。読取モードで表示する。
     val hasResultSnapshot: Boolean = false,               // [B1] 結果スナップショットが存在するか
     val liveSchedule: List<List<Int>> = emptyList(),      // [DefragLiveView] 計算中の最良盤面（実行中のみ）

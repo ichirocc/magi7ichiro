@@ -314,6 +314,7 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                     // [B1] 結果(読取ws6)/下書き(ws7) モード分離。既定=結果(読取)。確定結果が無ければ下書き扱い。
                     var editing by rememberSaveable { mutableStateOf(false) }
                     var copyConfirm by rememberSaveable { mutableStateOf(false) }
+                    var wishBulkOpen by rememberSaveable { mutableStateOf(false) }
                     val canRead = ui.hasResultSnapshot
                     val effectiveEditing = editing || !canRead
                     ScheduleModeCard(
@@ -334,6 +335,14 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                     ScheduleGrid(gridUi, onCellClick = onCell, proMode = proMode,
                         onBulkSet = { cells, k -> if (effectiveEditing) vm.setCells(cells, k) else vm.hintReadOnly() })
                     StaffCalendarCard(gridUi, onCellClick = onCell)
+                    if (effectiveEditing) {
+                        OutlinedButton(onClick = { wishBulkOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("希望シフトの一括操作（曜日／全体）")
+                        }
+                    }
+                    if (wishBulkOpen) {
+                        WishBulkSheet(ui, vm, presetWeekday = 0, onDismiss = { wishBulkOpen = false })
+                    }
                     if (copyConfirm) {
                         AlertDialog(
                             onDismissRequest = { copyConfirm = false },
