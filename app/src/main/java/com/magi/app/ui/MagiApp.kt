@@ -1,0 +1,634 @@
+package com.magi.app.ui
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import java.time.LocalDate
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.magi.app.v6.V6PortReport
+import com.magi.app.v6.V6Algorithm
+import com.magi.app.v6.CoverageVerdict
+import com.magi.app.v6.MirrorKeys
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+
+/**
+ * CSVのバイト列を文字列へ復号する。妥当な UTF-8 ならそれを採用し、そうでなければ日本の Excel CSV で
+ * 一般的な CP932(Shift-JIS) とみなす。先頭の BOM は除去する。これにより Shift-JIS の勤務表CSVが
+ * 文字化けせず取り込める（UTF-8 として bytes を読むと壊れていた）。
+ */
+
+internal fun decodeCsvBytes(bytes: ByteArray): String {
+    val utf8 = runCatching {
+        val dec = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        dec.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+    }.getOrNull()
+    val text = utf8 ?: runCatching { String(bytes, charset("MS932")) }.getOrElse { String(bytes, Charsets.UTF_8) }
+    return text.removePrefix("﻿")
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (Int) -> Unit = {}) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    // [Web反映/Wake Lock] 最適化(前景)中は画面を消灯させない＝計算の中断・ライブ表示の停止を防ぐ。
+    val rootView = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.LaunchedEffect(ui.running) { rootView.keepScreenOn = ui.running }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    var editingCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var oneHand by rememberSaveable { mutableStateOf(false) }
+    var proMode by rememberSaveable { mutableStateOf(false) }   // [プロ編集] 表示モード（false=かんたん / true=プロ）
+    var editScope by rememberSaveable { mutableStateOf(0) }   // [Web反映] 編集タブ: 0=月次 / 1=年次マスター
+    var wishConfirm by remember { mutableStateOf(0) } // >0: 担当外件数の確認ダイアログ表示
+    var rosterCsvChoice by remember { mutableStateOf<String?>(null) } // !=null: 勤務表/希望 取込選択ダイアログ
+    var guidedFix by remember { mutableStateOf(false) }              // [operator_ux §5] 「なおすのを手伝って」対話
+
+    val openJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.openInputStream(uri)?.use {
+                            it.readBytes().toString(Charsets.UTF_8)
+                        }
+                    }.getOrNull()
+                }
+                if (text != null) vm.load(text)
+            }
+        }
+    }
+
+    val openCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.openInputStream(uri)?.use { decodeCsvBytes(it.readBytes()) }
+                    }.getOrNull()
+                }
+                if (text != null) {
+                    // 勤務表テンプレCSVは「勤務表/希望シフト」の取り込み方法を選ばせる。それ以外は従来取込。
+                    if (com.magi.app.v6.RosterCsvImport.detect(text)) rosterCsvChoice = text
+                    else vm.importCsvSmart(text)
+                }
+            }
+        }
+    }
+
+    val saveJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val json = withContext(Dispatchers.Default) { vm.exportJson() }
+                if (json != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ctx.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val saveCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val csv = withContext(Dispatchers.Default) { vm.exportCsv() }
+                if (csv != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ctx.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val saveLogLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.Default) { vm.exportLogs() }
+                if (text != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val saveLogJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = withContext(Dispatchers.Default) { vm.exportLogsJson() }
+                if (text != null) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* 許可有無に関わらず計算は継続。許可時のみ完了通知が表示される。 */ }
+    val onBgOptimize: () -> Unit = {
+        notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        vm.runInBackground()
+    }
+
+    var tab by rememberSaveable { mutableStateOf(0) }
+    val loadSample: () -> Unit = {
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    val asset = runCatching { ctx.assets.open("sample_state_v6.json") }.getOrElse { ctx.assets.open("sample_state.json") }
+                    asset.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+            }
+            if (text != null) vm.load(text)
+        }
+    }
+    val openJson: () -> Unit = { openJsonLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+
+    Scaffold(
+        topBar = { MagiTopBar(ui) },
+        bottomBar = {
+            Column {
+                if (ui.loaded) BottomCommandBar(ui, vm)
+                MagiBottomNav(tab) { tab = it }
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { pad ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(pad)
+                .padding(horizontal = 16.dp)
+                .padding(top = if (oneHand) 120.dp else 0.dp) // 片手モード: 内容を親指の届く下方へ
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Spacer(Modifier.height(4.dp))
+            if (!ui.loaded && tab != 4) {
+                EmptyStateCard(onOpen = openJson, onSample = loadSample)
+            } else when (tab) {
+                0 -> {
+                    InterruptedBanner(ui, onRerun = { vm.runV6FullOptimize() }, onDismiss = { vm.dismissInterrupted() })
+                    // [operator_ux §3] 思考誘導ホーム：いまの状態に応じて「次にやること」を1枚＋大ボタン1つで提示。
+                    OperatorNextActionCard(
+                        ui = ui,
+                        onMake = { vm.runV6FullOptimize() },
+                        onDraft = { vm.generateSimple() },
+                        onStop = { vm.stop() },
+                        onExport = { saveCsvLauncher.launch("magi_schedule_${System.currentTimeMillis()}.csv") },
+                        onSchedule = { tab = 1 },
+                        onFix = { guidedFix = true },
+                        onSetup = { tab = 2 },
+                    )
+                    LiveScheduleCard(ui)
+                    // [冗長性削減] StatusHero(状態三重表示) / SummaryCard(統計は「ようす」と重複＋開発用語) /
+                    //   QuickActionGrid(下部ナビと4/6重複) は home から除外。詳細統計は「ようす」タブへ集約。
+                    CopilotCard(ui, onGoEdit = { tab = 2 })
+                    CoverageDiagnosisCard(ui)
+                    ActionCard(ui, vm, onBgOptimize = onBgOptimize)
+                    AlternativesCard(ui, onApply = { vm.applyAlternative(it) })
+                }
+                1 -> {
+                    val openEditor: (Int, Int) -> Unit = { i, j ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        editingCell = i to j
+                    }
+                    // [B1] 結果(読取ws6)/下書き(ws7) モード分離。既定=結果(読取)。確定結果が無ければ下書き扱い。
+                    var editing by rememberSaveable { mutableStateOf(false) }
+                    var copyConfirm by rememberSaveable { mutableStateOf(false) }
+                    val canRead = ui.hasResultSnapshot
+                    val effectiveEditing = editing || !canRead
+                    ScheduleModeCard(
+                        editing = effectiveEditing,
+                        canRead = canRead,
+                        onSelect = { editing = it },
+                        onCommit = { vm.commitEditingToResult() },
+                        onCopy = { copyConfirm = true },
+                    )
+                    // [校正] 希望の反映は「下書き（直す）」時だけ表示。読取結果には適用できないため
+                    //   読取時に出すのは冗長＝誤操作のもと。
+                    if (effectiveEditing) WishApplyCard(ui, onApply = {
+                        val oos = vm.wishOutOfScopeCount()
+                        if (oos > 0) wishConfirm = oos else vm.applyWishes(false)
+                    })
+                    val gridUi = if (effectiveEditing) ui else ui.copy(schedule = ui.resultSchedule)
+                    val onCell: (Int, Int) -> Unit = if (effectiveEditing) openEditor else { _, _ -> vm.hintReadOnly() }
+                    ScheduleGrid(gridUi, onCellClick = onCell, proMode = proMode,
+                        onBulkSet = { cells, k -> if (effectiveEditing) vm.setCells(cells, k) else vm.hintReadOnly() })
+                    StaffCalendarCard(gridUi, onCellClick = onCell)
+                    if (copyConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { copyConfirm = false },
+                            title = { Text("結果を下書きに複製しますか？") },
+                            text = { Text("いまの下書きは破棄され、確定済みの「結果」で置き換わります。「元に戻す」で取り消せます。") },
+                            confirmButton = { DialogConfirmButton("複製する", onClick = { copyConfirm = false; vm.copyResultToEditing() }) },
+                            dismissButton = { DialogDismissButton(onClick = { copyConfirm = false }) },
+                        )
+                    }
+                }
+                2 -> {
+                    SetupGuideCard(ui, vm)
+                    // [Web反映] 毎月変える「月次」と、たまにしか触らない「年次マスター」を分けて誤編集を防ぐ。
+                    MagiSegmentedControl(options = listOf("月次（毎月）", "年次マスター"), selected = editScope, onSelect = { editScope = it })
+                    if (editScope == 0) {
+                        MonthPickerCard(ui, vm)
+                        WishCard(ui, vm)
+                        NeedDayCard(ui, vm)
+                    } else {
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                            Text("制度・人員が変わったときだけ編集してください。毎月の調整は「月次」へ。",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Ws1Card(ui, vm)
+                        SkillGroupCard(ui, vm)
+                        SkillConstraintsCard(ui, vm)   // [校正] スキルC41/C42 をスキルG直下に co-locate
+                        ConstraintsCard(ui, vm)
+                        StaffRangeCard(ui, vm)
+                    }
+                }
+                3 -> {
+                    // [冗長性/用語] 「ようす」は やさしい俯瞰＋チェック＋内訳 のみ。開発用の V6 1ヶ月俯瞰
+                    //   (HARD Core/Guard・Apt/Equalize/covU 等の生指標) は詳細設定(上級者)へ移設。
+                    // [プロ編集] プロ表示モードのときは数値診断（V6 1ヶ月俯瞰・生指標）を前面に出す。
+                    if (proMode) V6DashboardCard(ui.v6)
+                    OverviewDashboard(ui)
+                    CheckSummaryView(ui)
+                    BreakdownCard(ui)
+                    // [校正] 開発用の ColorSettingsView（英語名・生の制約コード/WARN/CRITICAL露出）と
+                    // FlagsView（実験フラグ）は一般ユーザー画面から除外。詳細設定は上級者向けに別途。
+                }
+                else -> {
+                    AppearanceCard(themeMode, onThemeMode, oneHand, { oneHand = it }, proMode) { proMode = it }
+                    ShiftColorCard(ui, vm)
+                    DataActionsCard(
+                        ui = ui,
+                        onOpenJson = openJson,
+                        onSample = loadSample,
+                        onSaveJson = { saveJsonLauncher.launch("magi_state_${System.currentTimeMillis()}.json") },
+                        onOpenCsv = { openCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) },
+                        onSaveCsv = { saveCsvLauncher.launch("magi_schedule_${System.currentTimeMillis()}.csv") },
+                        onCheck = { vm.refreshCheck() },
+                    )
+                    SettingsCard(ui, vm)
+                    OperatorLogView(ui)
+                    // [screen_spec #12/#168] 実験フラグ(FlagsView)・ログ(LogsCard)・色トークン(ColorSettingsView)を
+                    // 折りたたみの詳細設定(既定=閉)に隔離。通常運用では触らない開発/上級項目。
+                    AdvancedSettingsSection(
+                        ui = ui,
+                        vm = vm,
+                        onExportLog = { saveLogLauncher.launch("magi_log_${System.currentTimeMillis()}.txt") },
+                        onExportJson = { saveLogJsonLauncher.launch("magi_log_${System.currentTimeMillis()}.json") },
+                    )
+                }
+            }
+            ui.message?.let { MessageBar(it) }
+            Spacer(Modifier.height(12.dp)) // 下部コマンドバー分の余白
+        }
+        val cell = editingCell
+        if (cell != null) {
+            ShiftPickerSheet(
+                ui = ui,
+                vm = vm,
+                cell = cell,
+                onPick = { k ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    vm.setCell(cell.first, cell.second, k)
+                    editingCell = null
+                },
+                onDismiss = { editingCell = null },
+            )
+        }
+        if (guidedFix) {
+            GuidedFixDialog(ui, vm, onDismiss = { guidedFix = false }, onRerun = { guidedFix = false; vm.runV6FullOptimize() })
+        }
+        rosterCsvChoice?.let { csvText ->
+            AlertDialog(
+                onDismissRequest = { rosterCsvChoice = null },
+                title = { Text("CSVの取り込み方法") },
+                text = {
+                    Text(
+                        "この勤務表CSVを、どちらとして取り込みますか？\n\n" +
+                            "・勤務表：表のとおり、いまの割り当てとして読み込みます。\n" +
+                            "・希望シフト：表をスタッフの希望として読み込み、勤務表は空から作成して最適化で希望を尊重します。",
+                    )
+                },
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DialogConfirmButton("勤務表として取り込む", onClick = { vm.importRosterAs(csvText, false); rosterCsvChoice = null })
+                        DialogDismissButton(onClick = { vm.importRosterAs(csvText, true); rosterCsvChoice = null }, text = "希望シフトとして取り込む")
+                    }
+                },
+                dismissButton = { DialogDismissButton(onClick = { rosterCsvChoice = null }) },
+            )
+        }
+        if (wishConfirm > 0) {
+            AlertDialog(
+                onDismissRequest = { wishConfirm = 0 },
+                title = { Text("担当外の希望を含めますか？") },
+                text = { Text("担当できないグループの希望が ${wishConfirm} 件あります。含めて反映すると担当不可の配置になります（違反として検出されます）。") },
+                confirmButton = {
+                    DialogConfirmButton("含めて反映", onClick = { vm.applyWishes(true); wishConfirm = 0 })
+                },
+                dismissButton = {
+                    DialogDismissButton(onClick = { vm.applyWishes(false); wishConfirm = 0 }, text = "担当内のみ反映")
+                },
+            )
+        }
+    }
+}
+
+/**
+ * [DefragLiveView 移植] 計算中の最良盤面ライブ表示。実行中のみ・折りたたみ。前回スナップショットと比較し
+ * 変化セルを赤枠でハイライト（操作不可の読取専用。オペレーターに「組んでいる様子」を見せて安心させる）。
+ */
+
+@Composable
+internal fun MagiTopBar(ui: UiState) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, shadowElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(color = MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.small) {
+                Text(
+                    "MAGI",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Text("勤務表", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.weight(1f))
+            if (ui.loaded) {
+                val ok = ui.hasResult && ui.bestHard == 0L
+                val label: String; val fg: Color; val bg: Color
+                when {
+                    ui.running -> { label = "実行中"; fg = MaterialTheme.colorScheme.onPrimaryContainer; bg = MaterialTheme.colorScheme.primaryContainer }
+                    ok -> { label = "配布可"; fg = MaterialTheme.colorScheme.onTertiaryContainer; bg = MaterialTheme.colorScheme.tertiaryContainer }
+                    ui.hasResult -> { label = "未解決 ${ui.bestHard}"; fg = MaterialTheme.colorScheme.onErrorContainer; bg = MaterialTheme.colorScheme.errorContainer }
+                    else -> { label = "未計算"; fg = MaterialTheme.colorScheme.onSurfaceVariant; bg = MaterialTheme.colorScheme.surfaceVariant }
+                }
+                Surface(color = bg, shape = MaterialTheme.shapes.small) {
+                    Text(label, color = fg, style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun BottomCommandBar(ui: UiState, vm: MagiViewModel) {
+    val cs = MaterialTheme.colorScheme
+    // 一本指: 主要操作を画面下部に全幅・大ボタン(60dp)で常設。指の届く範囲で押し外しにくい。文脈で 停止/作成/最適化。
+    Surface(color = cs.surface, tonalElevation = 3.dp, shadowElevation = 8.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (ui.canUndo && !ui.running) {
+                OutlinedButton(
+                    onClick = { vm.undo() },
+                    modifier = Modifier.height(60.dp).semantics { contentDescription = "直前の操作を元に戻す" },
+                ) { Text("元に戻す") }
+                Spacer(Modifier.width(10.dp))
+            }
+            // [Web反映] やり直し（手動修正ループ）。元に戻した直後だけ出す。
+            if (ui.canRedo && !ui.running) {
+                OutlinedButton(
+                    onClick = { vm.redo() },
+                    modifier = Modifier.height(60.dp).semantics { contentDescription = "元に戻した操作をやり直す" },
+                ) { Text("やり直し") }
+                Spacer(Modifier.width(10.dp))
+            }
+            when {
+                ui.running -> Button(
+                    onClick = { vm.stop() },
+                    modifier = Modifier.weight(1f).height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = cs.errorContainer, contentColor = cs.onErrorContainer),
+                ) {
+                    Icon(Icons.Filled.Stop, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("やめる", style = MaterialTheme.typography.titleMedium)
+                }
+                !ui.hasResult -> Button(
+                    // [統一] ラベル「勤務表をつくる」＝本最適化（思考誘導カードの大ボタンと同一動作）。
+                    //   下書きは思考誘導カードの補助「下書きをつくる」が担う（同名ラベルで別動作の不整合を解消）。
+                    onClick = { vm.runV6FullOptimize() },
+                    modifier = Modifier.weight(1f).height(60.dp),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("勤務表をつくる", style = MaterialTheme.typography.titleMedium)
+                }
+                else -> Button(
+                    onClick = { vm.runV6FullOptimize() },
+                    modifier = Modifier.weight(1f).height(60.dp),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("もう一度つくる", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun MagiBottomNav(selected: Int, onSelect: (Int) -> Unit) {
+    val items = listOf(
+        Triple("ホーム", Icons.Filled.Home, "ホーム"),
+        Triple("勤務表", Icons.Filled.DateRange, "勤務表"),
+        Triple("編集", Icons.Filled.Edit, "初期設定と制約の編集"),
+        Triple("分析", Icons.Filled.Assessment, "分析と違反"),
+        Triple("設定", Icons.Filled.Settings, "設定とデータ"),
+    )
+    NavigationBar {
+        items.forEachIndexed { i, item ->
+            NavigationBarItem(
+                selected = selected == i,
+                onClick = { onSelect(i) },
+                icon = { Icon(item.second, contentDescription = item.third) },
+                label = { Text(item.first, style = MaterialTheme.typography.labelMedium) },
+                alwaysShowLabel = true,
+            )
+        }
+    }
+}
+
+/** 前回の計算が中断（プロセスkill等）された場合の復帰バナー。入力は復元済みで、ワンタップ再実行できる。 */
+
+@Composable
+internal fun InterruptedBanner(ui: UiState, onRerun: () -> Unit, onDismiss: () -> Unit) {
+    if (!ui.interruptedRun || ui.running) return
+    val cs = MaterialTheme.colorScheme
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("前回の計算は中断されました", style = MaterialTheme.typography.titleMedium)
+            Text(ui.interruptedInfo ?: "入力は自動保存済みです。もう一度実行できます。",
+                style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onRerun, enabled = ui.loaded,
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("もう一度実行") }
+                OutlinedButton(onClick = onDismiss,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("閉じる") }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun EmptyStateCard(onOpen: () -> Unit, onSample: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large) {
+        Column(
+            Modifier.fillMaxWidth().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(Icons.Filled.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
+            Text("勤務表データを開きましょう", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text("保存済みのデータを開くか、サンプルから始められます。",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("データを開く", style = MaterialTheme.typography.labelLarge)
+            }
+            OutlinedButton(onClick = onSample, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("サンプルで試す", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun MessageBar(text: String) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.fillMaxWidth().padding(14.dp))
+    }
+}

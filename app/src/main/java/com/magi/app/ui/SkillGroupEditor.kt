@@ -1,0 +1,120 @@
+package com.magi.app.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * [スキルグループ新設・年次マスター] ユニットグループとは別の第2分類を編集する。担当可否には影響せず、
+ * スキル別の回数(cons41s)/組み合わせ禁止(cons42s) だけが参照する。1人1スキル。
+ */
+@Composable
+fun SkillGroupCard(ui: UiState, vm: MagiViewModel) {
+    if (!ui.loaded) return
+    val cs = MaterialTheme.colorScheme
+    val skills = vm.skillGroups()
+    val staff = vm.ws1()?.staff ?: emptyList()
+    var dialog by remember { mutableStateOf<SkillDlg?>(null) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("スキルグループ（年次・新ルール用）", style = MaterialTheme.typography.titleMedium)
+            Text("ユニットとは別の分類。担当できるシフトには影響せず、下の「スキル別の回数／組み合わせ禁止」だけが使います（1人1スキル）。",
+                fontSize = 11.sp, color = cs.onSurfaceVariant)
+
+            skills.forEachIndexed { g, sg ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${sg.kigou}  ${sg.name}", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    EditRowButton(onClick = { dialog = SkillDlg.Edit(g, sg.name, sg.kigou) })
+                    Spacer(Modifier.width(6.dp))
+                    DeleteRowButton(onClick = { vm.removeSkillGroup(g) })
+                }
+            }
+            AddRowButton("スキルグループ追加", onClick = { dialog = SkillDlg.Add })
+
+            if (skills.isNotEmpty()) {
+                Divider()
+                Text("職員のスキル割当", fontSize = 13.sp, style = MaterialTheme.typography.titleSmall)
+                staff.forEachIndexed { i, st ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(st.name, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        var open by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(skills.getOrNull(st.skillIdx)?.kigou ?: "(選択)")
+                                // [校正] ドロップダウンと分かるよう下向き矢印アフォーダンスを付与。
+                                Icon(
+                                    Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = "スキルを選ぶ",
+                                    modifier = Modifier.padding(start = 2.dp),
+                                )
+                            }
+                            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                                skills.forEachIndexed { gi, sg ->
+                                    DropdownMenuItem(text = { Text("${sg.kigou}  ${sg.name}") }, onClick = { vm.setStaffSkill(i, gi); open = false })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    when (val d = dialog) {
+        SkillDlg.Add -> SkillGroupDialog("スキルグループ追加", "", "", onOk = { n, k -> vm.addSkillGroup(n, k); dialog = null }, onClose = { dialog = null })
+        is SkillDlg.Edit -> SkillGroupDialog("スキルグループ編集", d.name, d.kigou, onOk = { n, k -> vm.editSkillGroup(d.g, n, k); dialog = null }, onClose = { dialog = null })
+        null -> {}
+    }
+}
+
+private sealed interface SkillDlg {
+    object Add : SkillDlg
+    data class Edit(val g: Int, val name: String, val kigou: String) : SkillDlg
+}
+
+@Composable
+private fun SkillGroupDialog(title: String, name0: String, kigou0: String, onOk: (String, String) -> Unit, onClose: () -> Unit) {
+    var name by remember { mutableStateOf(name0) }
+    var kigou by remember { mutableStateOf(kigou0) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = { DialogConfirmButton("OK", enabled = kigou.isNotBlank(), onClick = { if (kigou.isNotBlank()) onOk(name, kigou) }) },
+        dismissButton = { DialogDismissButton(onClick = onClose) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = kigou, onValueChange = { if (it.length <= 4) kigou = it }, label = { Text("記号（例: N）") }, singleLine = true)
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名前（例: 看護）") }, singleLine = true)
+            }
+        },
+    )
+}

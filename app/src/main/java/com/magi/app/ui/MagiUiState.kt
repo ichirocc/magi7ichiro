@@ -1,0 +1,65 @@
+package com.magi.app.ui
+
+import com.magi.app.v6.CoverageDiagnosis
+import com.magi.app.v6.MirrorKeys
+import com.magi.app.v6.V6Algorithm
+import com.magi.app.v6.V6PortReport
+
+// [リファクタ Phase3] UI 状態モデルを MagiViewModel.kt から分離（同一パッケージ・挙動不変）。
+internal val emptyBreakdown: Map<String, Int> = MirrorKeys.all.associateWith { 0 }
+
+data class UiState(
+    val loaded: Boolean = false,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,        // [Web反映] 手動修正ループ用の「やり直し」
+    val staff: Int = 0,
+    val days: Int = 0,
+    val shifts: Int = 0,
+    val groups: Int = 0,
+    val use2: Boolean = false,
+    val initHard: Long = 0,
+    val initSoft: Long = 0,
+    val running: Boolean = false,
+    val hasResult: Boolean = false,
+    val bestHard: Long = 0,
+    val bestSoft: Long = 0,
+    val totalViolations: Int = 0,
+    val weightedScore: Double = 0.0,
+    val breakdown: Map<String, Int> = emptyBreakdown,
+    val violationCells: Map<String, String> = emptyMap(),
+    val needViolations: Map<String, String> = emptyMap(),
+    val countViolations: Map<String, String> = emptyMap(),
+    val logs: List<String> = emptyList(),
+    val iters: Long = 0,
+    val itersPerSec: Long = 0,
+    val elapsedMs: Long = 0,
+    val workers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 8),
+    val budgetSec: Int = 300,
+    val softPolish: Boolean = true,   // [既定ON] 仕上げ最適化（品質研磨）。keep-best で悪化しない
+    val v6Algorithm: V6Algorithm = V6Algorithm.AUTO,
+    val staffNames: List<String> = emptyList(),
+    val staffGroupSymbols: List<String> = emptyList(),
+    val shiftSymbols: List<String> = emptyList(),
+    val shiftColorHex: List<String> = emptyList(),
+    val shiftTextHex: List<String> = emptyList(),
+    val violationColorHex: String = "",   // 違反の表示色（空＝テーマのエラー色）。shiftColors["__vio__"] に保存。
+    val schedule: List<List<Int>> = emptyList(),
+    val resultSchedule: List<List<Int>> = emptyList(),   // [B1] 確定結果(ws6)。読取モードで表示する。
+    val hasResultSnapshot: Boolean = false,               // [B1] 結果スナップショットが存在するか
+    val liveSchedule: List<List<Int>> = emptyList(),      // [DefragLiveView] 計算中の最良盤面（実行中のみ）
+    val v6: V6PortReport? = null,
+    val constraintsEdited: Boolean = false,
+    val structureEdited: Boolean = false,
+    val message: String? = null,
+    // 操作コパイロット: 満足度(0-100) / 研磨の限界 / ガチャ操作の助言
+    val satisfaction: Int = 0,
+    val polishExhausted: Boolean = false,
+    val copilotHint: String? = null,
+    val impossibleWishCount: Int = 0,
+    val opLog: List<String> = emptyList(),
+    val alternatives: List<String> = emptyList(), // 他の案（採用案以外の候補サマリ）
+    val coverageDiag: CoverageDiagnosis? = null,  // 人員不足(covU)の原因診断（充足不可/充足可能の切り分け）
+    val startDate: String = "",                   // 期間開始日（カレンダー表示の曜日整列に使用）
+    val interruptedRun: Boolean = false,          // 前回の計算がプロセスkill等で中断された
+    val interruptedInfo: String? = null,
+)
