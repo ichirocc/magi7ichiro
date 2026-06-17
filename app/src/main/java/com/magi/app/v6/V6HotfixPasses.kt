@@ -121,6 +121,11 @@ object V6HotfixPasses {
         work = rC3.newSchedule.copy2D()
         logs.addAll(rC3.logs)
 
+        onPhase("後処理 連続規則(c3系)3者ブロック回転研磨")
+        val rC3r = applyC3BlockRotationPolish(state, work, maxPasses = 2, shouldStop = shouldStop)
+        work = rC3r.newSchedule.copy2D()
+        logs.addAll(rC3r.logs)
+
         onPhase("後処理 グループ内シフト回数の平準化")
         val rGeq = applyGroupShiftEqualizePolish(state, work, maxPasses = 2, shouldStop = shouldStop)
         work = rGeq.newSchedule.copy2D()
@@ -314,6 +319,73 @@ object V6HotfixPasses {
         }
         val logs = listOf(MirrorLog(tag = "C3Polish",
             message = "連続規則(c3/c3m/c3n/c3mn)研磨・2-3日連結スワップ: total ${before.total}->${bestRep.total} 採用${applied}回"))
+        return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
+    }
+
+    /**
+     * [ソフト研磨・c3系強化] c3/c3m/c3mn(連続規則)で違反しているセルを起点に、3職員×連日(2-3日)の
+     * ブロック「回転」を試す。2者ブロック入替や同日k=3巡回では到達できない3者×窓の組替えを、各日の
+     * (日,シフト)人数を保ったまま（=被覆/HARD不変）行い、実目的(UnifiedViolationChecker)で改善時のみ
+     * 採用（keep-best＝退化なし）。重み・パラメータは不変。違反セル指向なので低コスト。
+     * 2回の2者交換に分解すると中間で悪化するため山登りでは越えられない局面を、回転1手で跨ぐのが狙い。
+     */
+    fun applyC3BlockRotationPolish(state: MagiState, schedule: Array<IntArray>, maxPasses: Int = 2, shouldStop: () -> Boolean = { false }): CyclicSwapResult {
+        val p = Problem(state)
+        val work = normalizeSchedule(schedule, p)
+        val before = UnifiedViolationChecker.check(state, work)
+        var bestRep = before
+        var applied = 0
+        fun movable(i: Int, j: Int) = p.wish[i][j] < 0     // 希望固定セルは動かさない
+        val windows = intArrayOf(2, 3)
+        var pass = 0
+        while (pass < maxPasses) {
+            if (shouldStop()) break
+            // c3系で違反している職員(=回転の起点)を収集。無ければ即終了（コスト0）。
+            val rep0 = if (pass == 0) before else UnifiedViolationChecker.check(state, work)
+            val anchorStaff = HashSet<Int>()
+            for ((key, cls) in rep0.violations) {
+                if (cls == "vio-c3" || cls == "vio-c3m" || cls == "vio-c3mn") {
+                    anchorStaff.add(key.substringBefore(",").toIntOrNull() ?: continue)
+                }
+            }
+            if (anchorStaff.isEmpty()) break
+            var improved = false
+            for (w in windows) {
+                if (p.T < w) continue
+                for (j in 0..p.T - w) {
+                    if (shouldStop()) break
+                    // この窓で全日movableな職員のみ回転対象（同一3名を各日で回す＝日内人数不変）。
+                    val cand = (0 until p.S).filter { i -> (0 until w).all { movable(i, j + it) } }
+                    if (cand.size < 3) continue
+                    for (ai in cand) {
+                        if (ai !in anchorStaff) continue
+                        for (bi in cand) {
+                            if (bi == ai) continue
+                            for (ci in cand) {
+                                if (ci == ai || ci == bi) continue
+                                // 回転 ai<-bi, bi<-ci, ci<-ai が各日で担当可能か。
+                                var feasible = true
+                                for (t in 0 until w) {
+                                    if (!p.canDo(ai, work[bi][j + t]) || !p.canDo(bi, work[ci][j + t]) || !p.canDo(ci, work[ai][j + t])) { feasible = false; break }
+                                }
+                                if (!feasible) continue
+                                val sa = IntArray(w) { work[ai][j + it] }
+                                val sb = IntArray(w) { work[bi][j + it] }
+                                val sc = IntArray(w) { work[ci][j + it] }
+                                for (t in 0 until w) { work[ai][j + t] = sb[t]; work[bi][j + t] = sc[t]; work[ci][j + t] = sa[t] }
+                                val rep = UnifiedViolationChecker.check(state, work)
+                                if (isBetter(rep, bestRep)) { bestRep = rep; applied++; improved = true }
+                                else for (t in 0 until w) { work[ai][j + t] = sa[t]; work[bi][j + t] = sb[t]; work[ci][j + t] = sc[t] }   // 巻き戻し
+                            }
+                        }
+                    }
+                }
+            }
+            pass++
+            if (!improved) break
+        }
+        val logs = listOf(MirrorLog(tag = "C3Rotate",
+            message = "連続規則(c3系)研磨・3者×2-3日ブロック回転: total ${before.total}->${bestRep.total} 採用${applied}回"))
         return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
     }
 
