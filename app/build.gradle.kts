@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.magi.app"
-        minSdk = 26
+        minSdk = 35
         targetSdk = 36
-        versionCode = 32
-        versionName = "2.23.0-rich-fix"
+        versionCode = 33
+        versionName = "2.24.0-minsdk35"
     }
 
     buildTypes {
