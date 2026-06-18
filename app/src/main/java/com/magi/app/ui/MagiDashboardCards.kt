@@ -483,7 +483,7 @@ internal fun RiskChip(label: String, shortage: Int, detail: String) {
 }
 
 
-/** 内訳の家族キー → 日本語ラベル（BreakdownCard と SwapSuggestionCard で共用）。 */
+/** 内訳の家族キー → 日本語ラベル（BreakdownCard と FixSuggestionCard で共用）。 */
 internal val breakdownLabels: Map<String, String> = mapOf(
     "groupViol" to "グループ不整合", "pref" to "希望違反", "covU" to "人員不足", "c3n" to "禁止の並び",
     "low" to "下限割れ", "high" to "上限超過",
@@ -556,7 +556,7 @@ internal fun BreakdownCard(ui: UiState, onFocusStaff: (Int) -> Unit = {}) {
                             else -> {
                                 locs.forEach { (txt, staff) ->
                                     if (staff != null) {
-                                        Text("$txt　→交換を探す", style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer,
+                                        Text("$txt　→直し方を探す", style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer,
                                             modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp).clickable { onFocusStaff(staff) })
                                     } else {
                                         Text(txt, style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer)
@@ -637,30 +637,39 @@ internal fun BigStat(label: String, value: String, modifier: Modifier = Modifier
 
 
 @Composable
-internal fun SwapSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.magi.app.v6.SwapSuggestion) -> Unit) {
+internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.magi.app.v6.FixSuggestion) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val title = "改善の提案（交換）" + if (ui.swapFocusName.isNotBlank()) "：${ui.swapFocusName} 関連" else ""
+                val title = "改善の提案" + if (ui.fixFocusName.isNotBlank()) "：${ui.fixFocusName} 関連" else ""
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (ui.swapSearching) {
+                if (ui.fixSearching) {
                     Text("探索中…", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                 } else {
-                    TextButton(onClick = onSearch) { Text(if (ui.swapSuggestions.isEmpty()) "探す" else "全体で再探索") }
+                    TextButton(onClick = onSearch) { Text(if (ui.fixSuggestions.isEmpty()) "探す" else "全体で再探索") }
                 }
             }
-            Text("同じ日のシフトを入れ替えて違反を減らす案です。人員（被覆）は変わりません。",
+            Text("違反を減らす1手を効果順に提案します。「変更」は1マスを別の勤務に、「交換」は2人の同日を入れ替えます。",
                 style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
             when {
-                ui.swapSearching -> Text("候補を探しています。少しお待ちください。", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
-                ui.swapSuggestions.isEmpty() -> Text("候補がありません。「探す」を押すか、上の違反の場所をタップしてください。\n※同日交換は2人の勤務を入れ替えるため、下限割れ・上限超過は「余裕のある相手」がいないと減らせない場合があります。",
+                ui.fixSearching -> Text("候補を探しています。少しお待ちください。", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                ui.fixSuggestions.isEmpty() -> Text("候補がありません。「探す」を押すか、上の違反の場所をタップしてください。\n※1手で直せない違反（下限が競合する等の構造的不足）は、設定(ws1)の見直しが根本解です。",
                     style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
-                else -> ui.swapSuggestions.forEach { s ->
+                else -> ui.fixSuggestions.forEach { s ->
+                    val isChange = s.kind == com.magi.app.v6.FixKind.CHANGE
+                    val tag = if (isChange) "変更" else "交換"
+                    val tagColor = if (isChange) MagiAccent.green else MagiAccent.blue
                     Surface(color = cs.secondaryContainer, shape = MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("${s.nameA} 「${s.shiftA}」 ↔ ${s.nameB} 「${s.shiftB}」（${dayMD(ui.startDate, s.day)}）",
-                                style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MagiTagChip(text = tag, color = tagColor)
+                                val headline = if (isChange)
+                                    "${s.nameA} ${dayMD(ui.startDate, s.day)} 「${s.fromShift}」→「${s.toShift}」"
+                                else
+                                    "${s.nameA} 「${s.fromShift}」 ↔ ${s.nameB} 「${s.toShift}」（${dayMD(ui.startDate, s.day)}）"
+                                Text(headline, style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer, modifier = Modifier.weight(1f))
+                            }
                             val diffTxt = s.diff.joinToString("・") { (k, d) ->
                                 "${breakdownLabels[k] ?: k} ${if (d < 0) "−${-d}" else "+$d"}"
                             }
@@ -668,7 +677,7 @@ internal fun SwapSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com
                             Text("違反 $totalTxt" + if (diffTxt.isNotBlank()) "（$diffTxt）" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer)
                             Button(onClick = { onApply(s) }, modifier = Modifier.align(Alignment.End).heightIn(min = 44.dp)) {
-                                Text("この交換を適用")
+                                Text(if (isChange) "この変更を適用" else "この交換を適用")
                             }
                         }
                     }

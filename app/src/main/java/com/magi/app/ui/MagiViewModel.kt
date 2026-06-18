@@ -15,8 +15,9 @@ import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.V6PortAnalyzer
 import com.magi.app.v6.SettingIssue
 import com.magi.app.v6.SettingFixAction
-import com.magi.app.v6.SwapSuggester
-import com.magi.app.v6.SwapSuggestion
+import com.magi.app.v6.FixSuggester
+import com.magi.app.v6.FixSuggestion
+import com.magi.app.v6.FixKind
 import com.magi.app.v6.V6PortReport
 import com.magi.app.v6.CoverageDiagnosis
 import com.magi.app.v6.V6Algorithm
@@ -1213,41 +1214,55 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * [改善提案] 違反を減らす「同日ペア交換」を探索して UI に提示する。
-     * focusStaff != null のときはそのスタッフが関わる交換だけに絞る（違反タップ起点）。重い処理のため非同期。
+     * [改善提案] 違反を減らす「1手（変更/交換）」を探索して UI に提示する。
+     * focusStaff != null のときはそのスタッフが関わる手だけに絞る（違反タップ起点）。重い処理のため非同期。
      */
-    fun findSwapSuggestions(focusStaff: Int? = null) {
+    fun findFixSuggestions(focusStaff: Int? = null) {
         val st = state ?: return
         val sched = currentSchedule ?: return
         val focusName = focusStaff?.let { st.staff.getOrNull(it)?.name } ?: ""
         val snap = sched.copy2D()
-        _ui.value = _ui.value.copy(swapSearching = true, swapFocusName = focusName)
+        _ui.value = _ui.value.copy(fixSearching = true, fixFocusName = focusName)
         viewModelScope.launch {
             val list = withContext(Dispatchers.Default) {
-                SwapSuggester.suggest(st, snap, focusStaff = focusStaff, maxResults = 8)
+                FixSuggester.suggest(st, snap, focusStaff = focusStaff, maxResults = 8)
             }
-            _ui.value = _ui.value.copy(swapSuggestions = list, swapSearching = false, swapFocusName = focusName)
+            _ui.value = _ui.value.copy(fixSuggestions = list, fixSearching = false, fixFocusName = focusName)
         }
     }
 
-    /** [改善提案] 交換候補を1タップで適用（同日2マスを入れ替え）。Undo 可・自動再診断・自動保存。 */
-    fun applySwapSuggestion(s: SwapSuggestion) {
+    /** [改善提案] 改善手を1タップで適用（CHANGE=1マス変更 / SWAP=同日2マス入替）。Undo 可・自動再診断・自動保存。 */
+    fun applyFixSuggestion(s: FixSuggestion) {
         val st = state ?: return
         val sched = currentSchedule ?: return
-        val a = s.staffA; val b = s.staffB; val j = s.day
-        if (a !in sched.indices || b !in sched.indices) return
-        if (j !in sched[a].indices || j !in sched[b].indices) return
-        pushUndo()
-        val va = sched[a][j]; val vb = sched[b][j]
-        sched[a][j] = vb; sched[b][j] = va
+        when (s.kind) {
+            FixKind.CHANGE -> {
+                val i = s.staffA; val j = s.day; val k = s.toShiftIdx
+                if (i !in sched.indices || j !in sched[i].indices || k < 0) return
+                pushUndo()
+                sched[i][j] = k
+            }
+            FixKind.SWAP -> {
+                val a = s.staffA; val b = s.staffB; val j = s.day
+                if (a !in sched.indices || b !in sched.indices) return
+                if (j !in sched[a].indices || j !in sched[b].indices) return
+                pushUndo()
+                val va = sched[a][j]; val vb = sched[b][j]
+                sched[a][j] = vb; sched[b][j] = va
+            }
+        }
         currentSchedule = sched
         state = st.withSchedule(sched)
         autoSave()
+        val msg = when (s.kind) {
+            FixKind.CHANGE -> "${s.nameA}の${dayMD(st.startDate, s.day)}を${s.toShift}に変更しました"
+            FixKind.SWAP -> "${s.nameA}と${s.nameB}の${dayMD(st.startDate, s.day)}を交換しました"
+        }
         _ui.value = _ui.value.copy(
             hasResult = true,
             schedule = sched.map { it.toList() },
-            swapSuggestions = emptyList(),   // 適用後は候補をクリア（盤面が変わるため再探索を促す）
-            message = "${s.nameA}と${s.nameB}の${dayMD(st.startDate, j)}を交換しました",
+            fixSuggestions = emptyList(),   // 適用後は候補をクリア（盤面が変わるため再探索を促す）
+            message = msg,
         )
         refreshCheck()
     }
