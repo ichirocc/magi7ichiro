@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
@@ -79,7 +78,7 @@ class OptimizationWorker(
         }
     }
 
-    /** Required for expedited work (used as a foreground fallback on older OS). */
+    /** Required for expedited work running as a foreground service. */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         ensureChannel()
         val n = NotificationCompat.Builder(ctx, CHANNEL)
@@ -88,9 +87,8 @@ class OptimizationWorker(
             .setContentText("バックグラウンドで計算しています…")
             .setOngoing(true)
             .build()
-        return if (Build.VERSION.SDK_INT >= 34)
-            ForegroundInfo(NID_PROGRESS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        else ForegroundInfo(NID_PROGRESS, n)
+        // minSdk 35: foregroundServiceType is always required.
+        return ForegroundInfo(NID_PROGRESS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     private fun notifyDone(hard: Int, total: Int) {
