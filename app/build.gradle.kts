@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "2.15.0-delta-prefilter-relink"
+        versionCode = 24
+        versionName = "2.15.1-prefilter-soundness-fix"
     }
 
     buildTypes {
