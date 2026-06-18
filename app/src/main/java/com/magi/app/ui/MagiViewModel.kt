@@ -1430,7 +1430,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val sanity = V6SanityPort.build(st, schedule)
         // 人員不足(covU)が残る場合のみ原因診断（どの日/シフトが「充足不可」か「未到達」か）を算出しログに残す。
         val coverageDiag = V6PortAnalyzer.diagnoseCoverage(st, schedule, report).takeIf { it.hasShortage }
-        val v6Logs = listOf("[I] LoadDataBit: ${sanity.loadDataBitSummary}") + sanity.warns.map { "[W] SanityCheck: $it" } + sanity.notes.map { "[I] V6Port: $it" } + sanity.duplicateSeqConstraints.take(4).map { "[W] DuplicateSeq: $it" } + (coverageDiag?.logLines() ?: emptyList())
+        val v6Logs = listOf("[I] LoadDataBit: ${sanity.loadDataBitSummary}") + sanity.warns.map { "[W] SanityCheck: $it" } + sanity.notes.map { "[I] V6Port: $it" } + sanity.duplicateSeqConstraints.take(4).map { "[W] DuplicateSeq: $it" } + sanity.guidance.take(12).map { "[W] 設定ミス: ${it.where} — ${it.problem} → ${it.fix}" } + (coverageDiag?.logLines() ?: emptyList())
         val mappedDiag = report.logs.map { "[${it.level}] ${it.tag}: ${it.message}" }
         rawDiagLogs = v6Logs + mappedDiag   // 出力用の全文（非圧縮）。表示は下で圧縮版を使う。
         // 満足度(0-100): 初期からの違反削減率。HARD未解決の間は上限を抑える。
@@ -1472,6 +1472,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             impossibleWishCount = sanity.impossibleWishes.size,
             // 人員不足(covU)の原因診断（充足不可/充足可能の切り分け）。不足が無ければ null。
             coverageDiag = coverageDiag,
+            settingIssues = sanity.guidance,
             startDate = st.startDate,
         )
     }

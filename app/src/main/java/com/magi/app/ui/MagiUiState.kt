@@ -60,6 +60,7 @@ data class UiState(
     val opLog: List<String> = emptyList(),
     val alternatives: List<String> = emptyList(), // 他の案（採用案以外の候補サマリ）
     val coverageDiag: CoverageDiagnosis? = null,  // 人員不足(covU)の原因診断（充足不可/充足可能の切り分け）
+    val settingIssues: List<com.magi.app.v6.SettingIssue> = emptyList(), // 制約/希望の設定ミスと直し方の誘導
     val startDate: String = "",                   // 期間開始日（カレンダー表示の曜日整列に使用）
     val interruptedRun: Boolean = false,          // 前回の計算がプロセスkill等で中断された
     val interruptedInfo: String? = null,

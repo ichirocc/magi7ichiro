@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.15.1-prefilter-soundness-fix"
+        versionCode = 25
+        versionName = "2.16.0-setting-guidance"
     }
 
     buildTypes {

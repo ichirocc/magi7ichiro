@@ -346,6 +346,47 @@ internal fun CoverageDiagnosisCard(ui: UiState) {
 }
 
 
+/**
+ * [設定ミスの誘導修正] 制約・希望シフトの入力間違いを「どこが・なぜ・どう直すか」で具体的に提示する。
+ * CoverageDiagnosisCard（人員不足の原因）と同じ作りで、配布前に設定を直せるようにするのが目的。
+ */
+@Composable
+internal fun SettingIssuesCard(ui: UiState, onGoEdit: () -> Unit) {
+    val issues = ui.settingIssues
+    if (issues.isEmpty()) return
+    val cs = MaterialTheme.colorScheme
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("設定の見直し（${issues.size}件）", style = MaterialTheme.typography.titleMedium)
+            Text("制約や希望シフトの入力に、直したほうがよい点があります。", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            for (s in issues.take(6)) {
+                val label: String
+                val tagColor: androidx.compose.ui.graphics.Color
+                when (s.kind) {
+                    com.magi.app.v6.IssueKind.WISH -> { label = "希望"; tagColor = MagiAccent.blue }
+                    com.magi.app.v6.IssueKind.CONSTRAINT -> { label = "制約"; tagColor = MagiAccent.red }
+                    com.magi.app.v6.IssueKind.DEMAND -> { label = "必要人数"; tagColor = MagiAccent.red }
+                    com.magi.app.v6.IssueKind.RANGE -> { label = "回数"; tagColor = MagiAccent.orange }
+                }
+                Surface(color = cs.errorContainer, shape = MaterialTheme.shapes.medium) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MagiTagChip(text = label, color = tagColor)
+                            Text(s.where, color = cs.onErrorContainer, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        }
+                        Text(s.problem, color = cs.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                        Text("→ ${s.fix}", color = cs.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            if (issues.size > 6) {
+                Text("ほか ${issues.size - 6} 件（詳細はログ出力を参照）", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = onGoEdit, modifier = Modifier.heightIn(min = 48.dp)) { Text("設定・希望を編集する") }
+        }
+    }
+}
+
 @Composable
 internal fun V6DashboardCard(v6: V6PortReport?) {
     if (v6 == null) return
