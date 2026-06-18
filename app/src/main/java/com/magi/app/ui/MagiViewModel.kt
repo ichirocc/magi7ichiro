@@ -1432,7 +1432,9 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val coverageDiag = V6PortAnalyzer.diagnoseCoverage(st, schedule, report).takeIf { it.hasShortage }
         val v6Logs = listOf("[I] LoadDataBit: ${sanity.loadDataBitSummary}") + sanity.warns.map { "[W] SanityCheck: $it" } + sanity.notes.map { "[I] V6Port: $it" } + sanity.duplicateSeqConstraints.take(4).map { "[W] DuplicateSeq: $it" } + sanity.guidance.take(12).map { "[W] 設定ミス: ${it.where} — ${it.problem} → ${it.fix}" } + (coverageDiag?.logLines() ?: emptyList())
         val mappedDiag = report.logs.map { "[${it.level}] ${it.tag}: ${it.message}" }
-        rawDiagLogs = v6Logs + mappedDiag   // 出力用の全文（非圧縮）。表示は下で圧縮版を使う。
+        // [デバッグ] 制約違反を家族ごとに「場所＋実値(必要/現状, 回数/下限上限, 誰/何日/シフト)」で出力。
+        val violationDebug = V6SanityPort.buildViolationDebug(st, schedule, report)
+        rawDiagLogs = v6Logs + mappedDiag + violationDebug   // 出力用の全文（非圧縮）。表示は下で圧縮版を使う。
         // 満足度(0-100): 初期からの違反削減率。HARD未解決の間は上限を抑える。
         val initTotal = (base.initHard + base.initSoft).coerceAtLeast(1L)
         val ratio = (1.0 - report.total.toDouble() / initTotal).coerceIn(0.0, 1.0)

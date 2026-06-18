@@ -239,6 +239,72 @@ object V6SanityPort {
         else -> fam
     }
 
+    /**
+     * [デバッグ用] 確定スケジュールの制約違反を「家族ごとに・場所と実値つき」で列挙する。
+     *  - 被覆(covU/covO/c41/c41s): 必要数/現状数 を実値表示（needが未設定=demand無しかどうかも即判明）
+     *  - 回数(low/high/c2): 回数/下限/上限
+     *  - セル(c1/c3/c3n/c3m/c3mn/c42/c42s/pref/groupViol): 誰の・何日・どのシフトか
+     * 読み取り専用（重み・データ不変＝安全）。家族ごと最大件数で打ち切り、ログ肥大を防ぐ。
+     */
+    fun buildViolationDebug(state: MagiState, schedule: Array<IntArray>, report: ViolationReport): List<String> {
+        val p = Problem(state)
+        val s = normalizeSchedule(schedule, p)
+        val out = ArrayList<String>()
+        fun sym(k: Int) = state.shifts.getOrNull(k)?.kigou ?: k.toString()
+        fun nm(i: Int) = state.staff.getOrNull(i)?.name ?: "#$i"
+        fun day(j: Int) = safeDayLabel(state.startDate, j)
+        fun emit(byFam: Map<String, MutableList<String>>, cap: Int) {
+            for ((fam, items) in byFam) {
+                val shown = items.take(cap).joinToString(" ; ")
+                val more = if (items.size > cap) " …他${items.size - cap}件" else ""
+                out.add("[D] 違反詳細 $fam(${items.size}件): $shown$more")
+            }
+        }
+
+        // 1) 被覆: 必要数/現状数の実値（needViolations は k,j キー）
+        if (report.needViolations.isNotEmpty()) {
+            val cov = coverage(p, s)
+            val byFam = LinkedHashMap<String, MutableList<String>>()
+            for ((key, cls) in report.needViolations) {
+                val parts = key.split(','); val k = parts.getOrNull(0)?.toIntOrNull() ?: continue; val j = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                if (k !in 0 until p.K || j !in 0 until p.T) continue
+                val n1 = p.need1[k][j]; val n2 = if (p.use2) p.need2[k][j] else n1
+                val needStr = if (p.use2 && n2 >= 0 && n2 != n1) "$n1~$n2" else "$n1"
+                byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }.add("${day(j)} ${sym(k)} 必要$needStr/現状${cov[j][k]}")
+            }
+            emit(byFam, 12)
+        }
+
+        // 2) 回数: 回数/下限/上限（countViolations は i,k キー）
+        if (report.countViolations.isNotEmpty()) {
+            val cnt = countMatrix(p, s)
+            val byFam = LinkedHashMap<String, MutableList<String>>()
+            for ((key, cls) in report.countViolations) {
+                val parts = key.split(','); val i = parts.getOrNull(0)?.toIntOrNull() ?: continue; val k = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                if (i !in 0 until p.S || k !in 0 until p.K) continue
+                val lo = p.rangeLo[i][k].takeIf { it != Int.MIN_VALUE }
+                val hi = p.rangeHi[i][k].takeIf { it != Int.MAX_VALUE }
+                byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }
+                    .add("${nm(i)} ${sym(k)} 回数${cnt[i][k]}" + (lo?.let { " 下限$it" } ?: "") + (hi?.let { " 上限$it" } ?: ""))
+            }
+            emit(byFam, 12)
+        }
+
+        // 3) セル違反: 誰の・何日・どのシフト（violations は i,j キー）
+        if (report.violations.isNotEmpty()) {
+            val byFam = LinkedHashMap<String, MutableList<String>>()
+            for ((key, cls) in report.violations) {
+                val parts = key.split(','); val i = parts.getOrNull(0)?.toIntOrNull() ?: continue; val j = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                if (i !in 0 until p.S || j !in 0 until p.T) continue
+                byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }.add("${nm(i)} ${day(j)}=${sym(s[i][j])}")
+            }
+            emit(byFam, 15)
+        }
+
+        if (out.isEmpty()) out.add("[D] 違反詳細: 制約違反はありません")
+        return out
+    }
+
     private fun buildLoadDataBitSummary(state: MagiState, p: Problem, schedule: Array<IntArray>): String {
         var assigned = 0
         for (row in schedule) {
