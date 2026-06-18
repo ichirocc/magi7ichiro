@@ -483,6 +483,35 @@ internal fun RiskChip(label: String, shortage: Int, detail: String) {
 }
 
 
+/**
+ * [分析→場所] 内訳の家族キー(low/covO/c42 等)から、その違反の「場所」をUI上で展開するために解決する。
+ *  - count系(low/high/c2)   : スタッフ名「シフト」      (countViolations: i,k)
+ *  - 被覆系(covU/covO/c41/c41s): 日付「シフト」           (needViolations: k,j)
+ *  - セル系(c1/c3/c3n/c3m/c3mn/c42/c42s/pref/groupViol): スタッフ名 日付=実シフト (violationCells: i,j)
+ */
+internal fun breakdownLocations(famKey: String, ui: UiState): List<String> {
+    fun nm(i: Int) = ui.staffNames.getOrNull(i) ?: "#$i"
+    fun sym(k: Int) = ui.shiftSymbols.getOrNull(k) ?: "$k"
+    val want = "vio-$famKey"
+    return when (famKey) {
+        "low", "high", "c2" -> ui.countViolations.entries.filter { it.value == want }.mapNotNull {
+            val p = it.key.split(","); val i = p.getOrNull(0)?.toIntOrNull(); val k = p.getOrNull(1)?.toIntOrNull()
+            if (i == null || k == null) null else "${nm(i)} 「${sym(k)}」"
+        }
+        "covU", "covO", "c41", "c41s" -> ui.needViolations.entries.filter { it.value == want }.mapNotNull {
+            val p = it.key.split(","); val k = p.getOrNull(0)?.toIntOrNull(); val j = p.getOrNull(1)?.toIntOrNull()
+            if (k == null || j == null) null else "${dayMD(ui.startDate, j)} 「${sym(k)}」"
+        }
+        else -> ui.violationCells.entries.filter { it.value == want }.mapNotNull {
+            val p = it.key.split(","); val i = p.getOrNull(0)?.toIntOrNull(); val j = p.getOrNull(1)?.toIntOrNull()
+            if (i == null || j == null) null else {
+                val cell = ui.schedule.getOrNull(i)?.getOrNull(j) ?: -1
+                "${nm(i)} ${dayMD(ui.startDate, j)}=${if (cell >= 0) sym(cell) else "—"}"
+            }
+        }
+    }
+}
+
 @Composable
 internal fun BreakdownCard(ui: UiState) {
     val labels = mapOf(
@@ -492,6 +521,8 @@ internal fun BreakdownCard(ui: UiState) {
         "c3mn" to "回避の並び", "c41" to "群のレンジ", "c42" to "群ペア", "covO" to "過剰な配置",
     )
     var criticalOnly by rememberSaveable { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    val onTapChip: (String) -> Unit = { k -> expanded = if (expanded == k) null else k }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -500,10 +531,32 @@ internal fun BreakdownCard(ui: UiState) {
                 Spacer(Modifier.width(6.dp))
                 Switch(checked = criticalOnly, onCheckedChange = { criticalOnly = it })
             }
-            BreakdownGroup("必須（満たすべき）", listOf("groupViol", "pref", "covU", "c3n"), 2, ui, labels)
+            BreakdownGroup("必須（満たすべき）", listOf("groupViol", "pref", "covU", "c3n"), 2, ui, labels, expanded, onTapChip)
             if (!criticalOnly) {
-                BreakdownGroup("人数の範囲", listOf("low", "high"), 1, ui, labels)
-                BreakdownGroup("任意（できれば）", listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "covO"), 0, ui, labels)
+                BreakdownGroup("人数の範囲", listOf("low", "high"), 1, ui, labels, expanded, onTapChip)
+                BreakdownGroup("任意（できれば）", listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "covO"), 0, ui, labels, expanded, onTapChip)
+            }
+            expanded?.let { key ->
+                val cs = MaterialTheme.colorScheme
+                val locs = breakdownLocations(key, ui)
+                val cnt = ui.breakdown[key] ?: 0
+                val name = labels[key] ?: key
+                Surface(color = cs.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("$name の場所（${cnt}件）", style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { expanded = null }) { Text("閉じる") }
+                        }
+                        when {
+                            locs.isEmpty() && ui.running -> Text("実行中です。確定後にここへ場所が表示されます。", style = MaterialTheme.typography.bodySmall, color = cs.onSecondaryContainer)
+                            locs.isEmpty() -> Text("場所情報がありません。", style = MaterialTheme.typography.bodySmall, color = cs.onSecondaryContainer)
+                            else -> {
+                                Text(locs.joinToString(" ・ "), style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer)
+                                if (ui.running) Text("※ 実行中のため確定前の値です（確定後に最新化）", style = MaterialTheme.typography.labelSmall, color = cs.onSecondaryContainer)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -511,12 +564,12 @@ internal fun BreakdownCard(ui: UiState) {
 
 
 @Composable
-internal fun BreakdownGroup(title: String, keys: List<String>, severity: Int, ui: UiState, labels: Map<String, String>) {
+internal fun BreakdownGroup(title: String, keys: List<String>, severity: Int, ui: UiState, labels: Map<String, String>, expanded: String?, onTap: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         keys.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                row.forEach { key -> SeverityChip(labels[key] ?: key, ui.breakdown[key] ?: 0, severity, Modifier.weight(1f)) }
+                row.forEach { key -> SeverityChip(labels[key] ?: key, ui.breakdown[key] ?: 0, severity, key, expanded == key, onTap, Modifier.weight(1f)) }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
@@ -525,7 +578,7 @@ internal fun BreakdownGroup(title: String, keys: List<String>, severity: Int, ui
 
 
 @Composable
-internal fun SeverityChip(label: String, count: Int, severity: Int, modifier: Modifier = Modifier) {
+internal fun SeverityChip(label: String, count: Int, severity: Int, famKey: String, expanded: Boolean, onTap: (String) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val active = count > 0
     val container: Color; val onContainer: Color
@@ -535,11 +588,20 @@ internal fun SeverityChip(label: String, count: Int, severity: Int, modifier: Mo
         severity == 1 -> { container = cs.secondaryContainer; onContainer = cs.onSecondaryContainer }
         else -> { container = cs.primaryContainer; onContainer = cs.onPrimaryContainer }
     }
-    Surface(color = container, shape = MaterialTheme.shapes.small, modifier = modifier.heightIn(min = 48.dp)) {
+    val shape = MaterialTheme.shapes.small
+    var m = modifier.heightIn(min = 48.dp)
+    if (expanded) m = m.border(2.dp, onContainer.copy(alpha = 0.7f), shape)
+    if (active) m = m.clickable { onTap(famKey) }
+    Surface(color = container, shape = shape, modifier = m) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, color = onContainer,
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(count.toString(), style = MaterialTheme.typography.titleMedium, color = onContainer)
+            if (active) {
+                Spacer(Modifier.width(2.dp))
+                Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null, tint = onContainer, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "2.18.0-onetap-fix"
+        versionCode = 28
+        versionName = "2.19.0-breakdown-drilldown"
     }
 
     buildTypes {
