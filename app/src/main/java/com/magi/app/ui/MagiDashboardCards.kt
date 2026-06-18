@@ -643,6 +643,8 @@ private fun fixKindTag(k: com.magi.app.v6.FixKind): Pair<String, androidx.compos
     com.magi.app.v6.FixKind.SWAP -> "交換" to MagiAccent.blue
     com.magi.app.v6.FixKind.SWAP_XDAY -> "別日交換" to MagiAccent.blue
     com.magi.app.v6.FixKind.SWAP_MULTI -> "3人交換" to MagiAccent.purple
+    com.magi.app.v6.FixKind.CHAIN -> "連鎖" to MagiAccent.red
+    com.magi.app.v6.FixKind.WINDOW -> "再最適化" to MagiAccent.orange
 }
 
 @Composable

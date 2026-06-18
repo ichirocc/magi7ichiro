@@ -3,7 +3,7 @@ package com.magi.app.v6
 import com.magi.app.model.MagiState
 
 /** 改善手の種類（UIのチップ表示用）。 */
-enum class FixKind { CHANGE, CHANGE_MULTI, SWAP, SWAP_XDAY, SWAP_MULTI }
+enum class FixKind { CHANGE, CHANGE_MULTI, SWAP, SWAP_XDAY, SWAP_MULTI, CHAIN, WINDOW }
 
 /** 1セルへの代入（move = これらを盤面にセットする）。 */
 data class FixCell(val staff: Int, val day: Int, val toShift: Int)
@@ -38,7 +38,7 @@ object FixSuggester {
         schedule: Array<IntArray>,
         focusStaff: Int? = null,
         maxResults: Int = 8,
-        deadlineMs: Long = 6000L,
+        deadlineMs: Long = 8000L,
     ): List<FixSuggestion> {
         val p = Problem(state)
         if (p.S < 1 || p.T < 1) return emptyList()
@@ -153,6 +153,109 @@ object FixSuggester {
                                     "${nm(i)} ${dlab(j1)}「${sym(s1)}」→「${sym(k1)}」＋${dlab(j2)}「${sym(s2)}」→「${sym(k2)}」")
                             }
                         }
+                    }
+                }
+            }
+        }
+        // ---- Phase 6: エジェクションチェーン（不足シフトを貪欲に最大3コマ充足。文書§2 玉突き）----
+        run {
+            val chainStaff = if (focus != null) listOf(focus) else countHot.toList()
+            for (i in chainStaff) {
+                if (timeUp()) break
+                val shorts = shortShift[i] ?: continue
+                for (x in shorts) {
+                    if (timeUp()) break
+                    val picked = ArrayList<FixCell>()
+                    val applied = ArrayList<Pair<Int, Int>>()   // (day, savedShift) 復元用
+                    var rounds = 0
+                    while (rounds < 3 && !timeUp()) {
+                        // 現在の積み上げ盤面から、x へ変えて base を最も下回る可動コマを1つ選ぶ
+                        var bestJ = -1; var bestSaved = -1
+                        var bestHard = base.hard; var bestTotal = base.total; var bestW = base.weightedScore
+                        var improved = false
+                        for (j in 0 until p.T) {
+                            if (p.wish[i][j] >= 0) continue
+                            val a = s[i][j]
+                            if (a == x) continue
+                            s[i][j] = x
+                            val rep = UnifiedViolationChecker.check(state, s); evals++
+                            s[i][j] = a
+                            val take = rep.hard < bestHard ||
+                                (rep.hard == bestHard && rep.total < bestTotal) ||
+                                (rep.hard == bestHard && rep.total == bestTotal && rep.weightedScore < bestW)
+                            if (take) { improved = true; bestHard = rep.hard; bestTotal = rep.total; bestW = rep.weightedScore; bestJ = j; bestSaved = a }
+                        }
+                        if (!improved || bestJ < 0) break
+                        s[i][bestJ] = x; picked.add(FixCell(i, bestJ, x)); applied.add(bestJ to bestSaved); rounds++
+                    }
+                    for ((j, sv) in applied) s[i][j] = sv   // 復元
+                    // 2コマ以上のときだけ採用（1コマは単一変更で既出）。base 改善を再確認。
+                    if (picked.size >= 2) {
+                        val saved = IntArray(picked.size) { s[picked[it].staff][picked[it].day] }
+                        for (op in picked) s[op.staff][op.day] = op.toShift
+                        val rep = UnifiedViolationChecker.check(state, s); evals++
+                        for (idx in picked.indices) s[picked[idx].staff][picked[idx].day] = saved[idx]
+                        val better = rep.hard < base.hard ||
+                            (rep.hard == base.hard && rep.total < base.total) ||
+                            (rep.hard == base.hard && rep.total == base.total && rep.weightedScore < base.weightedScore)
+                        if (better) found.add(Quad(FixSuggestion(FixKind.CHAIN, picked.toList(),
+                            "（連鎖）${nm(i)} の「${sym(x)}」不足を${picked.size}コマ補充", rep.hard - base.hard, rep.total - base.total, diffOf(rep)),
+                            rep.hard - base.hard, rep.total - base.total, rep.weightedScore - base.weightedScore))
+                    }
+                }
+            }
+        }
+        // ---- Phase 7: ミニ再最適化（1日×最大4名を総当たりで最適割当。文書§4 マスヒューリスティクスのミニ版）----
+        run {
+            val wDays = if (focus != null) (0 until p.T).toList() else hotDays.toList()
+            var windows = 0
+            for (j in wDays) {
+                if (timeUp() || windows >= 5) break
+                val movable = (0 until p.S).filter { p.wish[it][j] < 0 }
+                if (movable.size < 2) continue
+                // 違反関与(countHot)を優先、focus があれば先頭に。最大4名。
+                val ranked = movable.sortedByDescending { it in countHot }
+                val chosen0 = if (focus != null) (ranked.filter { it == focus } + ranked.filter { it != focus }) else ranked
+                var n = minOf(4, chosen0.size)
+                val cells0 = chosen0.take(4)
+                val opts0 = cells0.map { p.allowedShiftsForStaff(it).toList() }
+                fun combos(m: Int): Long { var c = 1L; for (t in 0 until m) c *= opts0[t].size; return c }
+                while (n > 2 && combos(n) > 20000L) n--
+                if (n < 2 || combos(n) > 20000L) continue
+                val cells = cells0.take(n)
+                val cellOpts = opts0.take(n)
+                val cur = IntArray(n) { s[cells[it]][j] }
+                windows++
+                val sizes = IntArray(n) { cellOpts[it].size }
+                val idx = IntArray(n)
+                var haveBest = false; var bHard = 0; var bTotal = 0; var bW = 0.0
+                var bestCombo: IntArray? = null
+                while (true) {
+                    for (c in 0 until n) s[cells[c]][j] = cellOpts[c][idx[c]]
+                    val rep = UnifiedViolationChecker.check(state, s); evals++
+                    val better = rep.hard < base.hard ||
+                        (rep.hard == base.hard && rep.total < base.total) ||
+                        (rep.hard == base.hard && rep.total == base.total && rep.weightedScore < base.weightedScore)
+                    if (better) {
+                        val take = !haveBest || rep.total < bTotal || (rep.total == bTotal && rep.weightedScore < bW)
+                        if (take) { haveBest = true; bHard = rep.hard; bTotal = rep.total; bW = rep.weightedScore; bestCombo = IntArray(n) { cellOpts[it][idx[it]] } }
+                    }
+                    var c = 0
+                    while (c < n) { idx[c]++; if (idx[c] < sizes[c]) break; idx[c] = 0; c++ }
+                    if (c == n || timeUp()) break
+                }
+                for (c in 0 until n) s[cells[c]][j] = cur[c]   // 復元
+                val bc = bestCombo
+                if (haveBest && bc != null) {
+                    val ops = ArrayList<FixCell>()
+                    for (c in 0 until n) if (bc[c] != cur[c]) ops.add(FixCell(cells[c], j, bc[c]))
+                    if (ops.size >= 2) {
+                        for (op in ops) s[op.staff][op.day] = op.toShift
+                        val rep = UnifiedViolationChecker.check(state, s); evals++
+                        for (op in ops) s[op.staff][op.day] = cur[cells.indexOf(op.staff)]
+                        found.add(Quad(FixSuggestion(FixKind.WINDOW, ops.toList(),
+                            "（再最適化）${dlab(j)} の${ops.size}名を最適割当", rep.hard - base.hard, rep.total - base.total, diffOf(rep)),
+                            rep.hard - base.hard, rep.total - base.total, rep.weightedScore - base.weightedScore))
                     }
                 }
             }
