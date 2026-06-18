@@ -351,7 +351,7 @@ internal fun CoverageDiagnosisCard(ui: UiState) {
  * CoverageDiagnosisCard（人員不足の原因）と同じ作りで、配布前に設定を直せるようにするのが目的。
  */
 @Composable
-internal fun SettingIssuesCard(ui: UiState, onGoEdit: () -> Unit) {
+internal fun SettingIssuesCard(ui: UiState, onFix: (com.magi.app.v6.SettingIssue) -> Unit, onGoEdit: () -> Unit) {
     val issues = ui.settingIssues
     if (issues.isEmpty()) return
     val cs = MaterialTheme.colorScheme
@@ -376,6 +376,11 @@ internal fun SettingIssuesCard(ui: UiState, onGoEdit: () -> Unit) {
                         }
                         Text(s.problem, color = cs.onErrorContainer, style = MaterialTheme.typography.bodySmall)
                         Text("→ ${s.fix}", color = cs.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+                        if (s.actionLabel.isNotEmpty()) {
+                            Button(onClick = { onFix(s) }, modifier = Modifier.align(Alignment.End).heightIn(min = 44.dp)) {
+                                Text(s.actionLabel)
+                            }
+                        }
                     }
                 }
             }

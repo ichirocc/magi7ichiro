@@ -303,7 +303,7 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                     //   QuickActionGrid(下部ナビと4/6重複) は home から除外。詳細統計は「ようす」タブへ集約。
                     CopilotCard(ui, onGoEdit = { tab = 2 })
                     CoverageDiagnosisCard(ui)
-                    SettingIssuesCard(ui, onGoEdit = { tab = 2 })
+                    SettingIssuesCard(ui, onFix = { vm.applySettingFix(it) }, onGoEdit = { tab = 2 })
                     ActionCard(ui, vm, onBgOptimize = onBgOptimize)
                     AlternativesCard(ui, onApply = { vm.applyAlternative(it) })
                 }

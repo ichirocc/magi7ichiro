@@ -27,11 +27,27 @@ enum class IssueKind { WISH, CONSTRAINT, DEMAND, RANGE }
  * - problem: 何が問題か（平易な日本語）
  * - fix: 具体的な直し方（どの画面で何をするか）
  */
+/**
+ * [ワンタップ修正] カード上で画面遷移・スクロールなしに直せる安全な単一操作の種類。
+ * NONE = 自動修正不可（編集画面へ誘導）。それ以外はカードのボタン1つで適用→自動再診断。
+ */
+enum class SettingFixAction { NONE, REMOVE_WISH, DELETE_DUP_SEQ, ZERO_RANGE_LO, CLAMP_RANGE_LO, CAP_DEMAND }
+
 data class SettingIssue(
     val kind: IssueKind,
     val where: String,
     val problem: String,
     val fix: String,
+    // --- ワンタップ修正（少ないスクロール・少ないボタン操作のための直接修正情報） ---
+    val action: SettingFixAction = SettingFixAction.NONE,
+    val actionLabel: String = "",          // ボタン文言（空=ワンタップ不可で編集画面へ）
+    val wishKey: String? = null,           // REMOVE_WISH: "i,j"
+    val seqFamily: String? = null,         // DELETE_DUP_SEQ: c3 / c3n / c3m / c3mn
+    val seqKey: String? = null,            // DELETE_DUP_SEQ: "Dﾃ→A4"（→区切り・非空のみ）
+    val rangeKey: String? = null,          // ZERO/CLAMP_RANGE_LO: "i,k"
+    val newLo: String? = null,             // ZERO/CLAMP_RANGE_LO: 新しい下限
+    val demandShiftIdx: Int? = null,       // CAP_DEMAND: シフトidx
+    val demandCap: Int? = null,            // CAP_DEMAND: 担当可能人数（上限）
 )
 
 data class ShiftCountDiagnostic(
@@ -164,15 +180,22 @@ object V6SanityPort {
                     "希望のシフト記号・日付が勤務表の範囲内かを確認してください"
                 else -> "希望の入力（i,j形式）を確認してください"
             }
-            out.add(SettingIssue(IssueKind.WISH, where, "実現できない希望です（${w.reason}）", fix))
+            val canOneTap = w.reason.contains("担当不可")
+            out.add(SettingIssue(IssueKind.WISH, where, "実現できない希望です（${w.reason}）", fix,
+                action = if (canOneTap) SettingFixAction.REMOVE_WISH else SettingFixAction.NONE,
+                actionLabel = if (canOneTap) "この希望を取消" else "",
+                wishKey = if (canOneTap) "${w.staffIndex},${w.dayIndex}" else null))
         }
 
         // 2) 連続パターン制約の重複（例: c3n:Dﾃ→A4）
         for (d in findDuplicateSeqConstraints(state)) {
-            val fam = c3FamilyJp(d.substringBefore(':'))
+            val famRaw = d.substringBefore(':')
+            val fam = c3FamilyJp(famRaw)
             val seq = d.substringAfter(':')
             out.add(SettingIssue(IssueKind.CONSTRAINT, "連続パターン「$seq」($fam)",
-                "同じパターンが2重に登録されています", "連続パターン設定(ws4)で「$seq」の重複行を1つ削除してください"))
+                "同じパターンが2重に登録されています", "連続パターン設定(ws4)で「$seq」の重複行を1つ削除してください",
+                action = SettingFixAction.DELETE_DUP_SEQ, actionLabel = "重複を1つ削除",
+                seqFamily = famRaw, seqKey = seq))
         }
 
         // 3) 需要 > 担当可能人数（その枠は誰をどう並べても必ず不足）
@@ -185,7 +208,9 @@ object V6SanityPort {
                 val sym = state.shifts.getOrNull(k)?.kigou ?: k.toString()
                 out.add(SettingIssue(IssueKind.DEMAND, "${safeDayLabel(state.startDate, j)} $sym",
                     "必要${need}人ですが担当できるのは${capable}人だけです",
-                    "担当できるスタッフを増やす(ws1)か、必要人数を${capable}人以下に下げてください(ws2)"))
+                    "担当できるスタッフを増やす(ws1)か、必要人数を${capable}人以下に下げてください(ws2)",
+                    action = SettingFixAction.CAP_DEMAND, actionLabel = "必要数を${capable}人に下げる",
+                    demandShiftIdx = k, demandCap = capable))
             }
         }
 
@@ -203,13 +228,16 @@ object V6SanityPort {
                 continue
             }
             if (lo != null && hi != null && lo > hi) {
-                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "下限$lo > 上限$hi で矛盾しています", "設定(ws1)で下限≤上限に直してください"))
+                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "下限$lo > 上限$hi で矛盾しています", "設定(ws1)で下限≤上限に直してください",
+                    action = SettingFixAction.CLAMP_RANGE_LO, actionLabel = "下限を${hi}に下げる", rangeKey = key, newLo = hi.toString()))
             }
             if (lo != null && lo > 0 && !p.canDo(i, k)) {
-                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "担当できないシフトに下限${lo}が設定されています", "下限を0にするか、${name}さんの担当に「$sym」を追加してください(ws1)"))
+                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "担当できないシフトに下限${lo}が設定されています", "下限を0にするか、${name}さんの担当に「$sym」を追加してください(ws1)",
+                    action = SettingFixAction.ZERO_RANGE_LO, actionLabel = "下限を0にする", rangeKey = key, newLo = "0"))
             }
             if (lo != null && lo > p.T) {
-                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "下限${lo}が期間日数(${p.T}日)を超えています", "下限を${p.T}以下に直してください(ws1)"))
+                out.add(SettingIssue(IssueKind.RANGE, "$name の「$sym」回数", "下限${lo}が期間日数(${p.T}日)を超えています", "下限を${p.T}以下に直してください(ws1)",
+                    action = SettingFixAction.CLAMP_RANGE_LO, actionLabel = "下限を${p.T}に下げる", rangeKey = key, newLo = p.T.toString()))
             }
         }
 

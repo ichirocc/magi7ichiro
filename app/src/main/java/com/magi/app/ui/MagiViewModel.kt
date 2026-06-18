@@ -13,6 +13,8 @@ import com.magi.app.v6.ScheduleCsvBridge
 import com.magi.app.v6.UnifiedViolationChecker
 import com.magi.app.v6.ViolationReport
 import com.magi.app.v6.V6PortAnalyzer
+import com.magi.app.v6.SettingIssue
+import com.magi.app.v6.SettingFixAction
 import com.magi.app.v6.V6PortReport
 import com.magi.app.v6.CoverageDiagnosis
 import com.magi.app.v6.V6Algorithm
@@ -1150,6 +1152,62 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(structureEdited = true)
         refreshCheck()
         autoSave()
+    }
+
+    /**
+     * [ワンタップ修正] 設定の見直しカードの1ボタンで、該当する設定ミスをその場で直す。
+     * 画面遷移・スクロール・行探し不要。applyStructure 経由なので Undo 可・自動再診断・自動保存される。
+     */
+    fun applySettingFix(issue: SettingIssue) {
+        val s = state ?: return
+        val ns: MagiState? = when (issue.action) {
+            SettingFixAction.REMOVE_WISH -> {
+                val key = issue.wishKey ?: return
+                if (!s.wishes.containsKey(key)) return
+                s.copy(wishes = s.wishes - key)
+            }
+            SettingFixAction.DELETE_DUP_SEQ -> {
+                val fam = issue.seqFamily ?: return
+                val key = issue.seqKey ?: return
+                fun delOne(rows: List<C3Row>): List<C3Row> {
+                    var done = false
+                    val res = ArrayList<C3Row>(rows.size)
+                    for (row in rows) {
+                        val joined = row.pattern.filter { it.isNotBlank() }.joinToString("→")
+                        if (!done && joined == key) { done = true; continue }
+                        res.add(row)
+                    }
+                    return res
+                }
+                when (fam) {
+                    "c3" -> s.copy(cons3 = delOne(s.cons3))
+                    "c3n" -> s.copy(cons3n = delOne(s.cons3n))
+                    "c3m" -> s.copy(cons3m = delOne(s.cons3m))
+                    "c3mn" -> s.copy(cons3mn = delOne(s.cons3mn))
+                    else -> return
+                }
+            }
+            SettingFixAction.ZERO_RANGE_LO, SettingFixAction.CLAMP_RANGE_LO -> {
+                val key = issue.rangeKey ?: return
+                val cur = s.staffRange[key] ?: Range("", "")
+                s.copy(staffRange = s.staffRange + (key to Range(issue.newLo ?: cur.lo, cur.hi)))
+            }
+            SettingFixAction.CAP_DEMAND -> {
+                val k = issue.demandShiftIdx ?: return
+                val cap = issue.demandCap ?: return
+                val sh = s.shifts.getOrNull(k) ?: return
+                val n1 = sh.need1.trim().toIntOrNull()
+                val n2 = sh.need2.trim().toIntOrNull()
+                val newN1 = if (n1 != null && n1 > cap) cap.toString() else sh.need1
+                val newN2 = if (n2 != null && n2 > cap) cap.toString() else sh.need2
+                if (newN1 == sh.need1 && newN2 == sh.need2) return
+                val list = s.shifts.toMutableList()
+                list[k] = sh.copy(need1 = newN1, need2 = newN2)
+                s.copy(shifts = list)
+            }
+            SettingFixAction.NONE -> null
+        }
+        if (ns != null) applyStructure(ns)
     }
 
     private fun applyStructure(r: Ws1Result) {
