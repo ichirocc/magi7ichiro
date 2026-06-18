@@ -636,6 +636,15 @@ internal fun BigStat(label: String, value: String, modifier: Modifier = Modifier
 }
 
 
+/** 改善手の種類 → (チップ文言, 色)。 */
+private fun fixKindTag(k: com.magi.app.v6.FixKind): Pair<String, androidx.compose.ui.graphics.Color> = when (k) {
+    com.magi.app.v6.FixKind.CHANGE -> "変更" to MagiAccent.green
+    com.magi.app.v6.FixKind.CHANGE_MULTI -> "複数変更" to MagiAccent.green
+    com.magi.app.v6.FixKind.SWAP -> "交換" to MagiAccent.blue
+    com.magi.app.v6.FixKind.SWAP_XDAY -> "別日交換" to MagiAccent.blue
+    com.magi.app.v6.FixKind.SWAP_MULTI -> "3人交換" to MagiAccent.purple
+}
+
 @Composable
 internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.magi.app.v6.FixSuggestion) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -657,18 +666,12 @@ internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.
                 ui.fixSuggestions.isEmpty() -> Text("候補がありません。「探す」を押すか、上の違反の場所をタップしてください。\n※1手で直せない違反（下限が競合する等の構造的不足）は、設定(ws1)の見直しが根本解です。",
                     style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 else -> ui.fixSuggestions.forEach { s ->
-                    val isChange = s.kind == com.magi.app.v6.FixKind.CHANGE
-                    val tag = if (isChange) "変更" else "交換"
-                    val tagColor = if (isChange) MagiAccent.green else MagiAccent.blue
+                    val (tag, tagColor) = fixKindTag(s.kind)
                     Surface(color = cs.secondaryContainer, shape = MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 MagiTagChip(text = tag, color = tagColor)
-                                val headline = if (isChange)
-                                    "${s.nameA} ${dayMD(ui.startDate, s.day)} 「${s.fromShift}」→「${s.toShift}」"
-                                else
-                                    "${s.nameA} 「${s.fromShift}」 ↔ ${s.nameB} 「${s.toShift}」（${dayMD(ui.startDate, s.day)}）"
-                                Text(headline, style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer, modifier = Modifier.weight(1f))
+                                Text(s.label, style = MaterialTheme.typography.titleSmall, color = cs.onSecondaryContainer, modifier = Modifier.weight(1f))
                             }
                             val diffTxt = s.diff.joinToString("・") { (k, d) ->
                                 "${breakdownLabels[k] ?: k} ${if (d < 0) "−${-d}" else "+$d"}"
@@ -677,7 +680,7 @@ internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.
                             Text("違反 $totalTxt" + if (diffTxt.isNotBlank()) "（$diffTxt）" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer)
                             Button(onClick = { onApply(s) }, modifier = Modifier.align(Alignment.End).heightIn(min = 44.dp)) {
-                                Text(if (isChange) "この変更を適用" else "この交換を適用")
+                                Text("この手を適用")
                             }
                         }
                     }

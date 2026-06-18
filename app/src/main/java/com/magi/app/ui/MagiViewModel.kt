@@ -17,6 +17,7 @@ import com.magi.app.v6.SettingIssue
 import com.magi.app.v6.SettingFixAction
 import com.magi.app.v6.FixSuggester
 import com.magi.app.v6.FixSuggestion
+import com.magi.app.v6.FixCell
 import com.magi.app.v6.FixKind
 import com.magi.app.v6.V6PortReport
 import com.magi.app.v6.CoverageDiagnosis
@@ -1231,38 +1232,24 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** [改善提案] 改善手を1タップで適用（CHANGE=1マス変更 / SWAP=同日2マス入替）。Undo 可・自動再診断・自動保存。 */
+    /** [改善提案] 改善手を1タップで適用（ops のセル代入を一括反映）。Undo 可・自動再診断・自動保存。 */
     fun applyFixSuggestion(s: FixSuggestion) {
         val st = state ?: return
         val sched = currentSchedule ?: return
-        when (s.kind) {
-            FixKind.CHANGE -> {
-                val i = s.staffA; val j = s.day; val k = s.toShiftIdx
-                if (i !in sched.indices || j !in sched[i].indices || k < 0) return
-                pushUndo()
-                sched[i][j] = k
-            }
-            FixKind.SWAP -> {
-                val a = s.staffA; val b = s.staffB; val j = s.day
-                if (a !in sched.indices || b !in sched.indices) return
-                if (j !in sched[a].indices || j !in sched[b].indices) return
-                pushUndo()
-                val va = sched[a][j]; val vb = sched[b][j]
-                sched[a][j] = vb; sched[b][j] = va
-            }
+        if (s.ops.isEmpty()) return
+        for (op in s.ops) {
+            if (op.staff !in sched.indices || op.day !in sched[op.staff].indices || op.toShift < 0) return
         }
+        pushUndo()
+        for (op in s.ops) sched[op.staff][op.day] = op.toShift
         currentSchedule = sched
         state = st.withSchedule(sched)
         autoSave()
-        val msg = when (s.kind) {
-            FixKind.CHANGE -> "${s.nameA}の${dayMD(st.startDate, s.day)}を${s.toShift}に変更しました"
-            FixKind.SWAP -> "${s.nameA}と${s.nameB}の${dayMD(st.startDate, s.day)}を交換しました"
-        }
         _ui.value = _ui.value.copy(
             hasResult = true,
             schedule = sched.map { it.toList() },
             fixSuggestions = emptyList(),   // 適用後は候補をクリア（盤面が変わるため再探索を促す）
-            message = msg,
+            message = "改善手を適用: ${s.label}",
         )
         refreshCheck()
     }
