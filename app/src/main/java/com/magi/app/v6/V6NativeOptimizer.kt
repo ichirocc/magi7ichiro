@@ -914,7 +914,7 @@ object V6NativeOptimizer {
         val out = base.copy2D()
         val p = cachedProblem(state)
         when (focus) {
-            "covU", "c41" -> repeat(8) { destroyRepairDay(state, out, rng) }
+            "covU", "c41", "c41s" -> repeat(8) { destroyRepairDay(state, out, rng) }   // c41s=スキル群の1日人数(c41と同型)
             "low", "high", "c2" -> repeat(8) { destroyRepairStaff(state, out, rng) }
             "groupViol", "pref", "c3n" -> {
                 val fixed = hf67HardRepair(state, out, rng).schedule
@@ -926,7 +926,7 @@ object V6NativeOptimizer {
     }
 
     private fun maxViolatedFamily(report: ViolationReport, avoid: Set<String> = emptySet()): String {
-        val order = listOf("groupViol", "covU", "pref", "c3n", "low", "high", "c41", "c2", "covO", "c42", "c1", "c3", "c3m", "c3mn")
+        val order = listOf("groupViol", "covU", "pref", "c3n", "low", "high", "c41", "c41s", "c2", "covO", "c42", "c42s", "c1", "c3", "c3m", "c3mn")
         // [HF63] まず deprioritize 対象(構造的に充足困難)を除いた族から最大違反を選ぶ。
         if (avoid.isNotEmpty()) {
             var b = "total"; var bc = -1
