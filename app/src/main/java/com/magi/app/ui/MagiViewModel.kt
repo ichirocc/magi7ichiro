@@ -942,6 +942,37 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         applyStructure(st.copy(staffRange = st.staffRange - "$i,$k"))
     }
 
+    /** [回数センター] 個人別の回数(上下限)と適切回数(apt)を職員×シフトで統合した一覧。
+     *  staffRange または apt(実効=担当可＆クランプ後)が効くセルのみ返す。aptEff=実効目標(-1=なし),
+     *  aptRaw=群目標の生値(-1=なし。aptEff と異なればクランプされている)。hasRange=個人別の上下限あり。 */
+    data class CountRuleView(
+        val i: Int, val k: Int, val staffName: String, val kigou: String,
+        val lo: String, val hi: String, val aptEff: Int, val aptRaw: Int, val hasRange: Boolean,
+    )
+
+    fun staffCountRules(): List<CountRuleView> {
+        val st = state ?: return emptyList()
+        val p = Problem(st)
+        val rows = mutableListOf<CountRuleView>()
+        for (i in 0 until p.S) {
+            val g = st.staff.getOrNull(i)?.groupIdx ?: continue
+            for (k in 0 until p.K) {
+                val r = st.staffRange["$i,$k"]
+                val hasRange = r != null && (r.lo.isNotBlank() || r.hi.isNotBlank())
+                val aptEff = p.apt[i][k]
+                if (!hasRange && aptEff < 0) continue
+                val aptRaw = st.groupShiftApt.getOrNull(g)?.getOrNull(k)?.trim()?.toIntOrNull() ?: -1
+                rows.add(
+                    CountRuleView(
+                        i, k, st.staff[i].name, st.shifts.getOrNull(k)?.kigou ?: k.toString(),
+                        r?.lo ?: "", r?.hi ?: "", aptEff, if (aptEff >= 0) aptRaw else -1, hasRange,
+                    )
+                )
+            }
+        }
+        return rows.sortedWith(compareBy({ it.i }, { it.k }))
+    }
+
     // ---- ws3 移植: 希望シフト wishes["i,j"]=シフトindex（採点=pref/hard1。割当やcons3系とは別。UIのみ・モデル/エンジン不変）----
     data class WishView(val i: Int, val j: Int, val staffName: String, val day: Int, val kigou: String, val k: Int)
 
