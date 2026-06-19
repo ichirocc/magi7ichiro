@@ -100,8 +100,14 @@ class Problem(val state: MagiState) {
             val row = state.groupShiftApt.getOrNull(g) ?: continue
             val canK = bucket.getOrNull(g)
             for (k in 0 until K) {
-                val t = row.getOrNull(k)?.trim()?.toIntOrNull() ?: continue
-                if (t >= 0 && canK?.contains(k) == true) apt[i][k] = t
+                var t = row.getOrNull(k)?.trim()?.toIntOrNull() ?: continue
+                if (t < 0 || canK?.contains(k) != true) continue
+                // [整合] 個人別回数(staffRange=LimMin/LimMax)の[lo,hi]外の群目標は到達不能。範囲端にクランプし、
+                // staffRangeで固定/制限された職員に解消不能な幻のapt違反が出るのを防ぐ（例: Dﾃを2-2固定の職員に群目標10）。
+                val rlo = rangeLo[i][k]; val rhi = rangeHi[i][k]
+                if (rlo != Int.MIN_VALUE && t < rlo) t = rlo
+                if (rhi != Int.MAX_VALUE && t > rhi) t = rhi
+                apt[i][k] = t
             }
         }
 
