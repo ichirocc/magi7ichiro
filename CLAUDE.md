@@ -168,7 +168,14 @@ read-only・ダッシュボードの SettingIssuesCard に常時=実行前に表
   増える一方で長期停滞時に肥大化し（観測 36k→64k）受理バイアスが固着していた。一定 kick(`GLS_DECAY_EVERY=256`)
   ごとに penalty を 80% へ減衰し curAug を `augment(cur)` で再同期。**globalBest は生スコア管理のため解の質は退化しない**
   （探索の受理動学のみに作用）。ユニットテスト(GlsPenaltyTest: decayShrinks/decayRemoves)で減衰算術を検証。
-- (未): restart摂動の非線形スケジュール、戦略的振動(λ係数オシレーション版, 要Python検証＋Δ×フル整合)。
+- (2.51.0, 完了): **restart摂動の非線形スケジュール**。restart 序盤ほど大きく揺らし(多様化)終盤ほど小さく(intensify)。
+  mult=0.6+1.2*(1-frac)^2。摂動のみでスコア不変・globalBest 保持＝退化なし。
+- (2.52.0, 完了): **戦略的振動(Glover, λ係数オシレーション版)**。深い停滞時(OSC_TRIGGER=600)に受理判定のみ hard 差分を
+  (1-OSC_RELAX=0.9999) に割引し実行不可の壁を越え、ON/OFF窓(1200中800 ON)で別の実行可能盆地へ移る。**受理層だけに作用し
+  生スコア/globalBest は不変＝Δ×フル無関係・解は退化しない**。暴走防止に excursion 上限(curHard<=globalHard+OSC_MAX_HARD=2)
+  と per-step 上限(+2e6)を維持。Python PoC で escape 0/20→20/20・実行不可解 0/20 を確認(/tmp/osc_poc.py)。
+  ユニットテスト(StrategicOscillationTest)で壁越え・暴走bound・後方互換を検証。SA受理アームのみ(GD は hard 非増を維持)。
+- (未): HF63 の族別重み係数(HARD×0.125)の振動化(より選択的なλ緩和)、ボトルネック可視化の集約。
 
 ## バックログ / 未対応
 1. TallyCard の読取/編集モード完全整合（result専用検査結果の plumbing）。
