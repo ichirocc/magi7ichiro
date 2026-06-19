@@ -25,15 +25,18 @@ class Evaluator(private val p: Problem, private val c3RunMode: Boolean = true) {
         var soft = 0L
 
         // c1: every window of length day1 must contain >= day2 of shiftIdx
+        // [統一] (1)担当不可スタッフは対象外(canDoガード=チェッカーと一致、解消不能な幻の違反を除去)、
+        //   (2)#fire 計上(soft += 1*重み4)。旧: 全スタッフ・soft += d1(フラット)。
         for (c in p.cons1) {
             val d1 = c.day1; val si = c.shiftIdx; val d2 = c.day2
             for (i in 0 until S) {
+                if (!p.canDo(i, si)) continue
                 var j = 0
                 while (j <= T - d1) {
                     var z = 0
                     var l = 0
                     while (l < d1) { if (a[i][j + l] == si) z++; l++ }
-                    if (z < d2) soft += d1
+                    if (z < d2) soft += 4L
                     j++
                 }
             }

@@ -79,7 +79,8 @@ class DeltaEvaluator(private val p: Problem, private val c3RunMode: Boolean = tr
         val h1 = hc3n + cov + hpref
         // [統一a/b] range(hct, 重み付き) と covO(scovO) を SOFT に含める（旧: hct は h2=表示HARD）。
         // [統一c] c3/c3m/c3mn に checker 重み(3/2/12)を適用（sc3等は #fire/run-deficit の生カウント）。
-        val soft = sc1 + sc2 + sc41 + sc42 + sc41s + sc42s + sc3 * 3 + sc3m * 2 + sc3mn * 12 + hct + scovO
+        // [統一c1] c1 にも checker 重み(4)を適用（sc1 は #fire 生カウント、canDoガード済）。
+        val soft = sc1 * 4 + sc2 + sc41 + sc42 + sc41s + sc42s + sc3 * 3 + sc3m * 2 + sc3mn * 12 + hct + scovO
         return h1 * 1_000_000L + soft
     }
 
@@ -197,7 +198,8 @@ class DeltaEvaluator(private val p: Problem, private val c3RunMode: Boolean = tr
         // [統一b] dCt(range) は SOFT へ移動（hard から除外）。
         val dHard = dC3n + (covUOf(p1, p2) - covUOf(covP1, covP2)) + dPref
         // [統一c] c3/c3m/c3mn の delta にも checker 重み(3/2/12)を適用（full soft と同一係数）。
-        val dSoft = dC1 + dC2 + dC41 + dC42 + dC41s + dC42s + dC3 * 3 + dC3m * 2 + dC3mn * 12 + dCt + dCovO
+        // [統一c1] c1 の delta にも ×4。
+        val dSoft = dC1 * 4 + dC2 + dC41 + dC42 + dC41s + dC42s + dC3 * 3 + dC3m * 2 + dC3mn * 12 + dCt + dCovO
         return score() + dHard * 1_000_000L + dSoft
     }
 
@@ -267,12 +269,13 @@ class DeltaEvaluator(private val p: Problem, private val c3RunMode: Boolean = tr
     private fun c1Local(i: Int, j: Int): Long {
         var tot = 0L
         for (c in p.cons1) {
+            if (!p.canDo(i, c.shiftIdx)) continue   // [統一] 担当不可は対象外(チェッカーと一致)
             val js0 = maxOf(0, j - c.day1 + 1); val js1 = minOf(T - c.day1, j)
             var js = js0
             while (js <= js1) {
                 var z = 0; var l = 0
                 while (l < c.day1) { if (a[i][js + l] == c.shiftIdx) z++; l++ }
-                if (z < c.day2) tot += c.day1
+                if (z < c.day2) tot += 1   // [統一] #fire 計上。重みは soft 集約で×4
                 js++
             }
         }
@@ -309,11 +312,12 @@ class DeltaEvaluator(private val p: Problem, private val c3RunMode: Boolean = tr
     private fun c1All(): Long {
         var tot = 0L
         for (c in p.cons1) for (i in 0 until S) {
+            if (!p.canDo(i, c.shiftIdx)) continue   // [統一] 担当不可は対象外(チェッカーと一致)
             var js = 0
             while (js <= T - c.day1) {
                 var z = 0; var l = 0
                 while (l < c.day1) { if (a[i][js + l] == c.shiftIdx) z++; l++ }
-                if (z < c.day2) tot += c.day1
+                if (z < c.day2) tot += 1   // [統一] #fire 計上。重みは soft 集約で×4
                 js++
             }
         }
