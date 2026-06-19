@@ -292,31 +292,41 @@ object V6SanityPort {
         // 0) 需給サマリ: シフトごとに「日次需要」と「個人下限/上限・適切回数(クランプ後)の供給圧力・現状配置」を
         //    対比し、過剰(covO=日数オーバー)/不足(covU)の構造的要因を一目で示す。読み取り専用（重み・データ不変）。
         //    例: Dﾃ 需要31 < 適切回数計35 → 各人をその回数へ近づける圧力が需要を超え、過剰配置(1日2人)が出る。
+        //    注: 下限/上限/適切回数の「計」は設定済み職員のみの合計。未設定者がいると実効上限は無制限なので、
+        //    上限計<需要でも不足とは限らない（不足の構造判定は全員に上限がある場合に限定する）。
         run {
             val cnt = countMatrix(p, s)
             for (k in 0 until p.K) {
                 var demand = 0
                 for (j in 0 until p.T) { val n = p.need1[k][j]; if (n > 0) demand += n }
                 var doable = 0; var loSum = 0; var hiSum = 0; var aptSum = 0
-                var hasRange = false; var hasApt = false; var cur = 0
+                var loCnt = 0; var hiCnt = 0; var aptCnt = 0; var cur = 0
                 for (i in 0 until p.S) {
                     cur += cnt[i][k]
                     if (!p.canDo(i, k)) continue
                     doable++
                     val lo = p.rangeLo[i][k]; val hi = p.rangeHi[i][k]; val t = p.apt[i][k]
-                    if (lo != Int.MIN_VALUE) { loSum += lo; hasRange = true }
-                    if (hi != Int.MAX_VALUE) { hiSum += hi; hasRange = true }
-                    if (t >= 0) { aptSum += t; hasApt = true }
+                    if (lo != Int.MIN_VALUE) { loSum += lo; loCnt++ }
+                    if (hi != Int.MAX_VALUE) { hiSum += hi; hiCnt++ }
+                    if (t >= 0) { aptSum += t; aptCnt++ }
                 }
+                val hasRange = loCnt > 0 || hiCnt > 0
+                val hasApt = aptCnt > 0
                 if (demand == 0 && !hasRange && !hasApt) continue   // 需給の概念が薄いシフトは省略
-                val pull = maxOf(loSum, aptSum)                     // 各人は下限と適切回数の高い方まで埋まりやすい
-                val pullSrc = if (aptSum >= loSum) "適切回数" else "下限"
                 val notes = ArrayList<String>()
-                if (demand > 0 && pull > demand) notes.add("供給圧力${pull}(${pullSrc})>需要${demand}→過剰見込+${pull - demand}")
-                if (demand > 0 && hiSum in 1 until demand) notes.add("需要${demand}>上限計${hiSum}→不足見込${demand - hiSum}")
-                val tag = if (notes.isEmpty()) "需給" else "需給注意"
-                val rangeStr = if (hasRange) " 下限計$loSum 上限計$hiSum" else ""
-                val aptStr = if (hasApt) " 適切回数計$aptSum" else ""
+                // 実際の過不足: 最適化結果(現状) vs 日次需要 = covO/covU の方向。
+                if (demand > 0 && cur > demand) notes.add("現状${cur}>需要${demand}→過剰${cur - demand}(covO)")
+                if (demand > 0 && cur < demand) notes.add("現状${cur}<需要${demand}→不足${demand - cur}(covU)")
+                // 構造要因(過剰): 各人が下限/適切回数まで埋める圧力(=確実に埋まる量)の合計が需要超過。
+                val pull = maxOf(loSum, aptSum)
+                val pullSrc = if (aptSum >= loSum) "適切回数" else "下限"
+                if (demand > 0 && pull > demand) notes.add("供給圧力${pull}(${pullSrc})>需要${demand}")
+                // 構造要因(不足): 全担当者に上限があり、その合計が需要未満のときのみ（未設定者は無制限なので除外）。
+                if (demand > 0 && doable > 0 && hiCnt == doable && hiSum < demand) notes.add("全${doable}名の上限計${hiSum}<需要${demand}→構造的に不足")
+                fun cs(sum: Int, c: Int) = if (c == doable) "$sum" else "$sum(${c}/${doable}名)"
+                val tag = if (notes.any { it.contains("過剰") || it.contains("不足") }) "需給注意" else "需給"
+                val rangeStr = if (hasRange) " 下限計${cs(loSum, loCnt)} 上限計${cs(hiSum, hiCnt)}" else ""
+                val aptStr = if (hasApt) " 適切回数計${cs(aptSum, aptCnt)}" else ""
                 out.add("[D] $tag ${sym(k)}: 需要$demand 担当${doable}名$rangeStr$aptStr 現状$cur" +
                     (if (notes.isNotEmpty()) " → ${notes.joinToString(" / ")}" else ""))
             }
