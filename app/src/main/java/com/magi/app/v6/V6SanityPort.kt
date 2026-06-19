@@ -256,6 +256,41 @@ object V6SanityPort {
             }
         }
 
+        // 6) [事前診断] シフト単位の構造的な過拘束（席数 vs 下限/上限の合計）。実行前に「何をしても無理」を提示し、
+        //    無駄な最適化(数分)を避ける。誤検知を避けるため、明確に矛盾する2ケースのみ（読み取り専用・データ不変）。
+        for (k in 0 until p.K) {
+            var seatsLo = 0; var seatsHi = 0; var hasDemand = false
+            for (j in 0 until p.T) {
+                val n1 = p.need1[k][j]
+                if (n1 < 0) continue   // need 未設定の日は対象外
+                hasDemand = true
+                val hi = if (p.use2 && p.need2[k][j] >= 0) p.need2[k][j] else n1
+                seatsLo += maxOf(n1, 0); seatsHi += maxOf(hi, 0)
+            }
+            if (!hasDemand) continue
+            val sym = state.shifts.getOrNull(k)?.kigou ?: k.toString()
+            var capable = 0; var loSum = 0; var capSum = 0; var allCapped = true
+            for (i in 0 until p.S) {
+                if (!p.canDo(i, k)) continue
+                capable++
+                val lo = p.rangeLo[i][k]; val hi = p.rangeHi[i][k]
+                if (lo != Int.MIN_VALUE && lo > 0) loSum += lo
+                if (hi != Int.MAX_VALUE) capSum += hi else allCapped = false
+            }
+            // A) 下限の合計 > 必要数(上限)の合計 → 全員の下限を満たすと必要数を超える＝過剰配置/下限割れが不可避。
+            if (loSum > seatsHi) {
+                out.add(SettingIssue(IssueKind.DEMAND, "「$sym」の回数下限の合計",
+                    "担当者の下限の合計が${loSum}回ですが、必要数の合計は${seatsHi}回しかありません。全員の下限は同時に満たせず、過剰配置か下限割れが必ず出ます",
+                    "「$sym」の個人下限を下げる(ws1)か、必要人数を増やしてください(ws2)"))
+            }
+            // B) 全担当者に上限があり、上限の合計 < 必要数 → 席を埋めきれず人員不足(covU)が不可避。
+            if (capable > 0 && allCapped && capSum < seatsLo) {
+                out.add(SettingIssue(IssueKind.DEMAND, "「$sym」の必要人数",
+                    "必要数の合計は${seatsLo}回ですが、担当者の上限の合計は${capSum}回しかありません。席を埋めきれず人員不足になります",
+                    "「$sym」の個人上限を上げる/担当者を増やす(ws1)か、必要人数を下げてください(ws2)"))
+            }
+        }
+
         return out
     }
 
