@@ -1109,6 +1109,10 @@ internal fun TallyCard(ui: UiState) {
     val perDay = remember(ui.schedule, k, t) {
         Array(t) { j -> IntArray(k).also { c -> for (i in 0 until s) { val v = ui.schedule[i].getOrNull(j) ?: -1; if (v in 0 until k) c[v]++ } } }
     }
+    // 違反ハイライト色（Excel版の色分けに対応）: 不足=赤 / 過剰=橙。
+    // 職員別は countViolations["i,k"](vio-low/vio-high=人数範囲)、日別は needViolations["k,j"](vio-covU/vio-covO=被覆)で判定。
+    val shortBg = Color(0xFFEF4444).copy(alpha = 0.30f)
+    val overBg = Color(0xFFF59E0B).copy(alpha = 0.36f)
     var mode by rememberSaveable { mutableStateOf(0) }   // 0=職員別 / 1=日別
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -1119,6 +1123,7 @@ internal fun TallyCard(ui: UiState) {
             if (mode == 0) {
                 Text("各職員が対象期間に各シフトを担当した回数（左右にスクロール）",
                     style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                TallyLegend(shortBg, overBg, "回数が下限未満", "上限超過")
                 Spacer(Modifier.height(8.dp))
                 val labW = 100.dp; val cw = 40.dp; val rh = 34.dp
                 Row {
@@ -1142,8 +1147,10 @@ internal fun TallyCard(ui: UiState) {
                             }
                             for (i in 0 until s) {
                                 val v = perStaff[i][kk]
-                                TallyBox(cw, rh, if (v == 0) cs.surface else cs.surfaceVariant, false) {
-                                    if (v != 0) Text("$v", style = MaterialTheme.typography.bodySmall, color = cs.onSurface)
+                                val vio = ui.countViolations["$i,$kk"]
+                                val cbg = when (vio) { "vio-low" -> shortBg; "vio-high" -> overBg; else -> if (v == 0) cs.surface else cs.surfaceVariant }
+                                TallyBox(cw, rh, cbg, false) {
+                                    if (v != 0 || vio != null) Text("$v", style = MaterialTheme.typography.bodySmall, color = cs.onSurface)
                                 }
                             }
                         }
@@ -1152,6 +1159,7 @@ internal fun TallyCard(ui: UiState) {
             } else {
                 Text("各日に各シフトへ配置されている人数（左右にスクロール）",
                     style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                TallyLegend(shortBg, overBg, "人員不足", "人員過剰")
                 Spacer(Modifier.height(8.dp))
                 val labW = 84.dp; val cw = 34.dp; val rh = 34.dp
                 Row {
@@ -1174,8 +1182,10 @@ internal fun TallyCard(ui: UiState) {
                             }
                             for (kk in 0 until k) {
                                 val v = perDay[j][kk]
-                                TallyBox(cw, rh, if (v == 0) cs.surface else cs.surfaceVariant, false) {
-                                    if (v != 0) Text("$v", style = MaterialTheme.typography.bodySmall, color = cs.onSurface)
+                                val vio = ui.needViolations["$kk,$j"]
+                                val cbg = when (vio) { "vio-covU" -> shortBg; "vio-covO" -> overBg; else -> if (v == 0) cs.surface else cs.surfaceVariant }
+                                TallyBox(cw, rh, cbg, false) {
+                                    if (v != 0 || vio != null) Text("$v", style = MaterialTheme.typography.bodySmall, color = cs.onSurface)
                                 }
                             }
                         }
@@ -1187,6 +1197,22 @@ internal fun TallyCard(ui: UiState) {
 }
 
 private fun tallyHex(hex: String?): Color? = if (hex.isNullOrBlank()) null else hexToColor(hex)
+
+/** シフト集計の違反ハイライト凡例（不足=赤 / 過剰=橙）。 */
+@Composable
+private fun TallyLegend(shortBg: Color, overBg: Color, shortLabel: String, overLabel: String) {
+    val cs = MaterialTheme.colorScheme
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(13.dp).background(shortBg, RoundedCornerShape(3.dp)))
+        Spacer(Modifier.width(4.dp))
+        Text(shortLabel, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+        Spacer(Modifier.width(14.dp))
+        Box(Modifier.size(13.dp).background(overBg, RoundedCornerShape(3.dp)))
+        Spacer(Modifier.width(4.dp))
+        Text(overLabel, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+    }
+}
 
 @Composable
 private fun TallyBox(
