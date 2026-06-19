@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 43
-        versionName = "2.36.0-apt-unify"
+        versionCode = 44
+        versionName = "2.37.0-fair-unify"
     }
 
     buildTypes {

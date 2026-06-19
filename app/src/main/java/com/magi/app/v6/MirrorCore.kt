@@ -49,8 +49,8 @@ data class LightOptimizeResult(
 
 object MirrorKeys {
     val hard = listOf("groupViol", "c3n", "covU", "pref")
-    val soft = listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covO", "low", "high", "apt")
-    val all = listOf("c1", "c2", "c3", "c3n", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covU", "covO", "pref", "low", "high", "groupViol", "apt")
+    val soft = listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covO", "low", "high", "apt", "fair")
+    val all = listOf("c1", "c2", "c3", "c3n", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covU", "covO", "pref", "low", "high", "groupViol", "apt", "fair")
 }
 
 object UnifiedViolationChecker {
@@ -186,6 +186,22 @@ object UnifiedViolationChecker {
                     inc("apt", kotlin.math.abs(n - t))
                     if (!countViolations.containsKey("$i,$k")) markCount(i, k, if (n > t) "aptHigh" else "aptLow")
                 }
+            }
+        }
+
+        // [統一fair] グループ内公平化: 群×担当ONシフトごと、メンバー回数の round(平均) からの L1 偏差和。
+        // SOFT・重み1。最適化器(Evaluator/Delta)と同一指標。内訳チップ(UI)には出さず weightedScore/total に算入。
+        for (g in 0 until p.G) {
+            val mem = p.groupMembers[g]
+            val m = mem.size
+            if (m < 2) continue
+            for (k in p.bucket[g]) {
+                var sum = 0
+                for (x in mem) sum += counts[x][k]
+                val tgt = Math.round(sum.toDouble() / m).toInt()
+                var d = 0
+                for (x in mem) d += kotlin.math.abs(counts[x][k] - tgt)
+                if (d > 0) inc("fair", d)
             }
         }
 
@@ -334,6 +350,7 @@ object UnifiedViolationChecker {
         out += w("c41s", 1.0)   // [スキルグループ] スキル群C41の罰則（既存C41と同等）
         out += w("c42s", 1.0)   // [スキルグループ] スキル群C42の罰則
         out += w("apt", 1.0)    // [統一apt] 適切回数(双方向目標) L1偏差・重み1（最適化器 Evaluator/Delta と一致）
+        out += w("fair", 1.0)   // [統一fair] グループ内公平化 L1偏差・重み1（最適化器 Evaluator/Delta と一致）
         out += w("covO", 0.5)
         return out
     }

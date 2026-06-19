@@ -118,6 +118,20 @@ class Evaluator(private val p: Problem, private val c3RunMode: Boolean = true) {
             if (t >= 0) soft += kotlin.math.abs(n - t).toLong()
         }
 
+        // [統一fair] グループ内公平化 SOFT・重み1。群×担当ONシフトごと、メンバー回数の round(平均) からの
+        // L1偏差和。同群の職員間で各シフト回数を均す（UnifiedViolationChecker の "fair" と一致）。
+        for (g in 0 until p.G) {
+            val mem = p.groupMembers[g]
+            val m = mem.size
+            if (m < 2) continue
+            for (k in p.bucket[g]) {
+                var sum = 0
+                for (x in mem) sum += ssn[x][k]
+                val tgt = Math.round(sum.toDouble() / m).toInt()
+                for (x in mem) soft += kotlin.math.abs(ssn[x][k] - tgt).toLong()
+            }
+        }
+
         // covU: per-day need shortfall. MIN=OR two-generation design (P1 vs P2).
         var c2v1 = 0L; var c2v2 = 0L
         for (j in 0 until T) {

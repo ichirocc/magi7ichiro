@@ -28,6 +28,9 @@ class Problem(val state: MagiState) {
         (0 until K).filter { k -> row.getOrNull(k) == 1 }.toIntArray()
     }
 
+    /** groupMembers[g] = 群gに属する staff index。グループ内公平化(fair)で群メンバー間の回数偏差を均すのに使う。 */
+    val groupMembers: Array<IntArray> = Array(G) { g -> (0 until S).filter { sgrp[it] == g }.toIntArray() }
+
     /** Staff indices that may take a given shift (used by block-fill moves). */
     val staffForShift: Array<IntArray> = Array(K) { k ->
         (0 until S).filter { i -> bucket[state.staff[i].groupIdx].contains(k) }.toIntArray()
