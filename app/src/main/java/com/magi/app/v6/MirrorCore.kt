@@ -151,10 +151,10 @@ object UnifiedViolationChecker {
             }
         }
 
-        checkC3Family(p, s, p.cons3, "c3", forbidden = false, { key -> inc(key) }, ::mark)
-        checkC3Family(p, s, p.cons3n, "c3n", forbidden = true, { key -> inc(key) }, ::mark)
-        checkC3Family(p, s, p.cons3m, "c3m", forbidden = false, { key -> inc(key) }, ::mark)
-        checkC3Family(p, s, p.cons3mn, "c3mn", forbidden = true, { key -> inc(key) }, ::mark)
+        checkC3Family(p, s, p.cons3, "c3", forbidden = false, { key, amt -> inc(key, amt) }, ::mark)
+        checkC3Family(p, s, p.cons3n, "c3n", forbidden = true, { key, amt -> inc(key, amt) }, ::mark)
+        checkC3Family(p, s, p.cons3m, "c3m", forbidden = false, { key, amt -> inc(key, amt) }, ::mark)
+        checkC3Family(p, s, p.cons3mn, "c3mn", forbidden = true, { key, amt -> inc(key, amt) }, ::mark)
 
         for (i in 0 until p.S) for (j in 0 until p.T) {
             val w = p.wish[i][j]
@@ -245,13 +245,42 @@ object UnifiedViolationChecker {
         list: List<C3>,
         key: String,
         forbidden: Boolean,
-        inc: (String) -> Unit,
+        inc: (String, Int) -> Unit,
         mark: (Int, Int, String) -> Unit,
     ) {
         for (c in list) {
             val seq = c.seq
             val d = seq.size
             if (d == 0 || d > p.T) continue
+            // [統一: 最適化器 Evaluator の HF507 と一致] 非forbidden の単一シフト連は run-deficit で評価する。
+            // 長さ r(<d) の run ごとに (d-r) を加算し、その run のセルを強調。素の窓マッチとは違反の「方向」が
+            // 異なる（窓=未完成窓数 / run=不足ぶん）ため、最適化器と表示・提案が食い違わないよう統一する。
+            if (!forbidden && C3Run.isSingleShiftSeq(seq)) {
+                val first = seq[0]
+                for (i in 0 until p.S) {
+                    val row = schedule[i]
+                    val t = row.size
+                    var runStart = -1
+                    var r = 0
+                    var j = 0
+                    while (j <= t) {
+                        val on = j < t && row[j] == first
+                        if (on) {
+                            if (r == 0) runStart = j
+                            r++
+                        } else if (r > 0) {
+                            val deficit = d - r
+                            if (deficit > 0) {
+                                inc(key, deficit)
+                                for (jj in runStart until runStart + r) mark(i, jj, key)
+                            }
+                            r = 0; runStart = -1
+                        }
+                        j++
+                    }
+                }
+                continue
+            }
             for (i in 0 until p.S) {
                 var j = 0
                 while (j <= p.T - d) {
@@ -260,7 +289,7 @@ object UnifiedViolationChecker {
                         for (l in 1 until d) if (schedule[i][j + l] == seq[l]) z++
                         val fire = if (forbidden) z == d - 1 else z < d - 1
                         if (fire) {
-                            inc(key)
+                            inc(key, 1)
                             for (l in 0 until d) mark(i, j + l, key)
                         }
                     }
