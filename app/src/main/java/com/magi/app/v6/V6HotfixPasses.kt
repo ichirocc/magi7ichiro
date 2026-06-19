@@ -117,7 +117,7 @@ object V6HotfixPasses {
         val c1Anchor = setOf("vio-c1")
         val maxRounds = 4
         var round = 0
-        var totalCyc = 0; var totalC1 = 0; var totalC1r = 0; var totalC3 = 0; var totalC3r = 0; var totalGrp = 0; var totalSk = 0
+        var totalCyc = 0; var totalC1 = 0; var totalC1r = 0; var totalC3 = 0; var totalC3r = 0
         while (round < maxRounds && !shouldStop()) {
             var roundApplied = 0
 
@@ -146,21 +146,6 @@ object V6HotfixPasses {
             work = rC3r.newSchedule.copy2D(); totalC3r += rC3r.applied; roundApplied += rC3r.applied
             if (round == 0) logs.addAll(rC3r.logs)
 
-            // [群範囲研磨] c41/c42(通常群)・c41s/c42s(スキル群)を同日2者スワップで研磨。いずれも従来
-            //   needViolations 側に出て群情報が失われ研磨されなかった取りこぼしを解消。対象なしなら即終了。
-            if (state.cons41.isNotEmpty() || state.cons42.isNotEmpty()) {
-                onPhase("後処理 群範囲(c41/c42)研磨 [巡${round + 1}]")
-                val rGrp = applyGroupRangePairPolish(state, work, skill = false, maxPasses = 2, shouldStop = shouldStop)
-                work = rGrp.newSchedule.copy2D(); totalGrp += rGrp.applied; roundApplied += rGrp.applied
-                if (round == 0) logs.addAll(rGrp.logs)
-            }
-            if (state.cons41s.isNotEmpty() || state.cons42s.isNotEmpty()) {
-                onPhase("後処理 スキル群(c41s/c42s)研磨 [巡${round + 1}]")
-                val rSk = applyGroupRangePairPolish(state, work, skill = true, maxPasses = 2, shouldStop = shouldStop)
-                work = rSk.newSchedule.copy2D(); totalSk += rSk.applied; roundApplied += rSk.applied
-                if (round == 0) logs.addAll(rSk.logs)
-            }
-
             round++
             if (roundApplied == 0) break   // この巡で1手も採用なし＝joint局所最適に到達
         }
@@ -170,9 +155,8 @@ object V6HotfixPasses {
         run {
             val softAfter = UnifiedViolationChecker.check(state, work)
             fun bd(r: ViolationReport, k: String) = r.breakdown[k] ?: 0
-            val adopted = totalCyc + totalC1 + totalC1r + totalC3 + totalC3r + totalGrp + totalSk
-            val targets = bd(preSoftRep, "c1") + bd(preSoftRep, "c3") + bd(preSoftRep, "c3m") + bd(preSoftRep, "c3mn") +
-                bd(preSoftRep, "c41") + bd(preSoftRep, "c42") + bd(preSoftRep, "c41s") + bd(preSoftRep, "c42s")
+            val adopted = totalCyc + totalC1 + totalC1r + totalC3 + totalC3r
+            val targets = bd(preSoftRep, "c1") + bd(preSoftRep, "c3") + bd(preSoftRep, "c3m") + bd(preSoftRep, "c3mn")
             val verdict = when {
                 adopted > 0 -> "有効(採用${adopted}手)"
                 targets == 0 -> "対象なし"
@@ -185,11 +169,7 @@ object V6HotfixPasses {
                     " / c3m ${bd(preSoftRep, "c3m")}->${bd(softAfter, "c3m")}" +
                     " / c3mn ${bd(preSoftRep, "c3mn")}->${bd(softAfter, "c3mn")}" +
                     " | HARD $hardNote / total ${preSoftRep.total}->${softAfter.total}" +
-                    " / c41 ${bd(preSoftRep, "c41")}->${bd(softAfter, "c41")}" +
-                    " / c42 ${bd(preSoftRep, "c42")}->${bd(softAfter, "c42")}" +
-                    " / c41s ${bd(preSoftRep, "c41s")}->${bd(softAfter, "c41s")}" +
-                    " / c42s ${bd(preSoftRep, "c42s")}->${bd(softAfter, "c42s")}" +
-                    " (採用内訳 循環:${totalCyc} c1:${totalC1} c1回転:${totalC1r} c3:${totalC3} c3回転:${totalC3r} 群:${totalGrp} skill:${totalSk})"))
+                    " (採用内訳 循環:${totalCyc} c1:${totalC1} c1回転:${totalC1r} c3:${totalC3} c3回転:${totalC3r})"))
         }
 
         onPhase("後処理 グループ内シフト回数の平準化")
@@ -336,84 +316,6 @@ object V6HotfixPasses {
         }
         val logs = listOf(MirrorLog(tag = "CyclicSwap",
             message = "循環交換(k=2,3)研磨: total ${before.total}->${bestRep.total} 採用${applied}回"))
-        return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
-    }
-
-    /**
-     * [ソフト研磨・群範囲/組合せ] c41/c42(通常群)と c41s/c42s(スキル群)は完全に同型で、判定が群index
-     * (sgrp か ssk)で行われるだけ(MirrorCore 参照)。いずれも c41(s) は markNeed(shiftIdx,j) として
-     * needViolations 側に出て群情報が失われ、職員セルのアンカーから拾えないため専用研磨が無く「評価のみで
-     * 研磨されない」取りこぼしだった。ここで違反に関与する群の職員を起点(anchor)に、同日2者スワップ
-     * (各日の (日,シフト) 人数を保つ=被覆/HARD不変)を試し、実目的(UnifiedViolationChecker, c41/c42/
-     * c41s/c42s 込み)で改善時のみ採用(keep-best=退化なし)。アンカーは report ではなく
-     * Problem.cons41(s)/cons42(s) から直接算出する(群情報を復元するため)。重み・パラメータ不変。
-     * skill=false で通常群(sgrp/c41/c42)、skill=true でスキル群(ssk/c41s/c42s)を研磨する。
-     */
-    fun applyGroupRangePairPolish(state: MagiState, schedule: Array<IntArray>, skill: Boolean, maxPasses: Int = 2, shouldStop: () -> Boolean = { false }): CyclicSwapResult {
-        val p = Problem(state)
-        val work = normalizeSchedule(schedule, p)
-        val before = UnifiedViolationChecker.check(state, work)
-        var bestRep = before
-        var applied = 0
-        fun movable(i: Int, j: Int) = p.wish[i][j] < 0     // 希望固定セルは動かさない
-        // 群index(sgrp/ssk)・制約リスト・breakdownキー・ログ表記を skill で切替（本体は共通）。
-        val grp = if (skill) p.ssk else p.sgrp
-        val cons41 = if (skill) p.cons41s else p.cons41
-        val cons42 = if (skill) p.cons42s else p.cons42
-        val k41 = if (skill) "c41s" else "c41"
-        val k42 = if (skill) "c42s" else "c42"
-        val tag = if (skill) "SkillGroupPolish" else "GroupRangePolish"
-        val name = if (skill) "スキル群(c41s/c42s)" else "群範囲(c41/c42)"
-        if (cons41.isEmpty() && cons42.isEmpty()) {
-            return CyclicSwapResult(work, before.total, before.total, 0,
-                listOf(MirrorLog(tag = tag, message = "$name 研磨: 対象なし")))
-        }
-        var pass = 0
-        while (pass < maxPasses) {
-            if (shouldStop()) break
-            var improved = false
-            // [違反セル指向] 違反している c41(s)/c42(s) に関与する群の職員のみを起点に絞る。
-            //   その群の人数/組合せを変える 2者スワップは必ず群メンバーを含む＝取りこぼし無し。空なら即終了。
-            val anchorStaff = HashSet<Int>()
-            for (j in 0 until p.T) {
-                for (c in cons41) {
-                    var z = 0
-                    for (i in 0 until p.S) if (grp[i] == c.groupIdx && work[i][j] == c.shiftIdx) z++
-                    if (z < c.l || z > c.u) for (i in 0 until p.S) if (grp[i] == c.groupIdx) anchorStaff.add(i)
-                }
-                for (c in cons42) {
-                    var hasL = false; var hasR = false
-                    for (i in 0 until p.S) {
-                        if (grp[i] == c.g1 && work[i][j] == c.s1) hasL = true
-                        if (grp[i] == c.g2 && work[i][j] == c.s2) hasR = true
-                    }
-                    if (hasL && hasR) for (i in 0 until p.S) if (grp[i] == c.g1 || grp[i] == c.g2) anchorStaff.add(i)
-                }
-            }
-            if (anchorStaff.isEmpty()) break
-            for (j in 0 until p.T) {
-                if (shouldStop()) break
-                for (a in 0 until p.S) {
-                    if (!movable(a, j)) continue
-                    for (b in a + 1 until p.S) {
-                        if (!movable(b, j)) continue
-                        if (a !in anchorStaff && b !in anchorStaff) continue   // 少なくとも一方は違反群の職員
-                        val sa = work[a][j]; val sb = work[b][j]
-                        if (sa == sb || !p.canDo(a, sb) || !p.canDo(b, sa)) continue
-                        work[a][j] = sb; work[b][j] = sa
-                        val rep = UnifiedViolationChecker.check(state, work)
-                        if (isBetter(rep, bestRep)) { bestRep = rep; applied++; improved = true }
-                        else { work[a][j] = sa; work[b][j] = sb }
-                    }
-                }
-            }
-            pass++
-            if (!improved) break
-        }
-        val logs = listOf(MirrorLog(tag = tag,
-            message = "$name 研磨: $k41 ${before.breakdown[k41] ?: 0}->${bestRep.breakdown[k41] ?: 0}" +
-                " / $k42 ${before.breakdown[k42] ?: 0}->${bestRep.breakdown[k42] ?: 0}" +
-                " / total ${before.total}->${bestRep.total} HARD ${before.hard}->${bestRep.hard} 採用${applied}回"))
         return CyclicSwapResult(work, before.total, bestRep.total, applied, logs)
     }
 
