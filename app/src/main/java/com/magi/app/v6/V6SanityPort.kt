@@ -332,6 +332,29 @@ object V6SanityPort {
             }
         }
 
+        // 0b) 上下チェック(全シフト網羅): 下限/上限(staffRange)が設定された全シフトについて、個人別の
+        //     下限割れ(low)/上限超過(high)を担当者ぶん洗い出す。違反詳細(low/high)は違反のみ列挙だが、
+        //     こちらは設定済みシフトを網羅し違反0でも「上下OK」を出す。判定は UnifiedViolationChecker と一致
+        //     （low: lo!=0 かつ canDo かつ 回数<lo / high: 回数>hi）。読み取り専用。
+        run {
+            val cnt = countMatrix(p, s)
+            for (k in 0 until p.K) {
+                val lows = ArrayList<String>(); val highs = ArrayList<String>()
+                var hasBound = false
+                for (i in 0 until p.S) {
+                    if (!p.canDo(i, k)) continue
+                    val lo = p.rangeLo[i][k]; val hi = p.rangeHi[i][k]; val n = cnt[i][k]
+                    if (lo != Int.MIN_VALUE && lo != 0) { hasBound = true; if (n < lo) lows.add("${nm(i)} $n<$lo") }
+                    if (hi != Int.MAX_VALUE) { hasBound = true; if (n > hi) highs.add("${nm(i)} $n>$hi") }
+                }
+                if (!hasBound) continue
+                fun part(label: String, xs: List<String>) =
+                    if (xs.isEmpty()) "${label}0名" else "${label}${xs.size}名(${xs.take(8).joinToString(" ")}${if (xs.size > 8) " …他${xs.size - 8}件" else ""})"
+                val tag = if (lows.isEmpty() && highs.isEmpty()) "上下OK" else "上下注意"
+                out.add("[D] $tag ${sym(k)}: ${part("下限割れ", lows)} / ${part("上限超過", highs)}")
+            }
+        }
+
         // 1) 被覆: 必要数/現状数の実値（needViolations は k,j キー）
         if (report.needViolations.isNotEmpty()) {
             val cov = coverage(p, s)
