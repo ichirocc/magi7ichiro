@@ -79,13 +79,45 @@ def repair_day(inst, sched, j, rng):
                 sched[i][j] = k; have += 1
         avail = avail[idx:]
 
-def destroy_repair_day(inst, sched, rng):
+def repair_day_smart(inst, sched, j, rng, cnt):
+    """[soft-aware 修復] 需要穴を埋める際、割当の marginal soft(下限不足の解消 / 上限超過の回避)が
+    最小の担当可能者を選ぶ。cnt[i][k]=現状の総回数(呼出側が当日クリア後に算出)。"""
+    S, K, need, lo, hi = inst['S'], inst['K'], inst['need'], inst['lo'], inst['hi']
+    def marg(i, k):
+        n = cnt[i][k]
+        before = ((lo[i][k] - n) * 90 if lo[i][k] and n < lo[i][k] else 0) + ((n - hi[i][k]) * 45 if n > hi[i][k] else 0)
+        n1 = n + 1
+        after = ((lo[i][k] - n1) * 90 if lo[i][k] and n1 < lo[i][k] else 0) + ((n1 - hi[i][k]) * 45 if n1 > hi[i][k] else 0)
+        return after - before
+    order = list(range(1, K)); rng.shuffle(order)
+    for k in order:
+        want = need[k][j]
+        have = sum(1 for i in range(S) if sched[i][j] == k)
+        while have < want:
+            best_i = -1; best = None
+            for i in range(S):
+                if sched[i][j] == 0 and inst['canDo'][i][k]:
+                    m = marg(i, k)
+                    if best is None or m < best:
+                        best = m; best_i = i
+            if best_i < 0:
+                break
+            sched[best_i][j] = k; cnt[best_i][k] += 1; have += 1
+
+def destroy_repair_day(inst, sched, rng, smart=False):
     """ランダムな1日を破壊(全員休に)→貪欲修復。スライス(列)を snapshot して呼出側が revert 可能に。"""
     T = inst['T']; j = rng.randrange(T)
     col = [sched[i][j] for i in range(inst['S'])]
     for i in range(inst['S']):
         sched[i][j] = 0
-    repair_day(inst, sched, j, rng)
+    if smart:
+        cnt = [[0] * inst['K'] for _ in range(inst['S'])]
+        for i in range(inst['S']):
+            for jj in range(T):
+                cnt[i][sched[i][jj]] += 1
+        repair_day_smart(inst, sched, j, rng, cnt)
+    else:
+        repair_day(inst, sched, j, rng)
     return ('day', j, col)
 
 def destroy_repair_staff(inst, sched, rng):
@@ -160,7 +192,7 @@ def optimize(inst, seed, iters, feats):
             # --- 候補手の選択: ALNS destroy-repair(day/staff) or 1セル変更 ---
             r_mv = rng.random(); mv = None; ci = cj = -1; old = -1
             if r_mv < dr_day:
-                mv = destroy_repair_day(inst, cur, rng)
+                mv = destroy_repair_day(inst, cur, rng, smart=feats.get('smart_repair', False))
             elif r_mv < dr_day + dr_staff:
                 mv = destroy_repair_staff(inst, cur, rng)
             else:
@@ -240,6 +272,7 @@ def main():
         ("+gls+decay", {"gls": True, "gls_decay": True}),
         ("+nonlinear_restart", {"nonlinear_restart": True}),
         ("+oscillation", {"oscillation": True}),
+        ("+smart_repair", {"smart_repair": True}),
         ("ALL", {"gls": True, "gls_decay": True, "nonlinear_restart": True, "oscillation": True}),
     ]
     # 真に過拘束で destroy-repair でも hard>0 が残る tier(=脱出が効くなら効く領域)
