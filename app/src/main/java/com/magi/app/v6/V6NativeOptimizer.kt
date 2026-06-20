@@ -60,13 +60,6 @@ object V6NativeOptimizer {
     /** [GLS移植] 最良未更新がこの反復数を超えたら GLS penalty を強化（Web版 glsTrigger 既定200）。 */
     private const val GLS_TRIGGER = 200L
     private const val GLS_DECAY_EVERY = 256   // [GLS aging] この kick 数ごとに penalty を減衰し肥大化を防ぐ
-    // [戦略的振動] 深い停滞時に hard を一時割引して実行不可の壁を越え別の実行可能盆地へ移る(Glover)。
-    //   生スコアで globalBest をゲートするため解は退化しない(Python PoCで escape↑・実行不可解0を検証済)。
-    private const val OSC_TRIGGER = 600L      // この反復数 改善なし(深い停滞)で振動を発動
-    private const val OSC_PERIOD = 1200L      // 振動の周期(反復)
-    private const val OSC_ON = 800L           // うち hard 割引を ON にする反復数(残りは OFF=通常受理で実行可能へ復帰)
-    private const val OSC_MAX_HARD = 2L       // current が globalBest より この hard 数を超えて悪化したら振動 OFF(暴走防止)
-    private const val OSC_RELAX = 0.9999      // hard 差分を (1-0.9999) に割引(壁を実質無料化。PoCでこの水準が必要と判明)
 
     /** [HF290 役割分担移植] 並列仮説の探索/精製プロファイル（温度・摂動の倍率）。
      *  W0=1.0(ベースライン=退化防止)、以降は探索(>1)/精製(<1)を交互に割当てて portfolio を多様化。 */
@@ -286,9 +279,6 @@ object V6NativeOptimizer {
         eval.reset(globalBest)
         var globalScore = eval.score()
         val diffBuf = IntArray(p.S * p.T)   // scratch: flat indices i*T+j of changed cells (zero-alloc)
-        // [HF63] 族別の構造的充足不能を追跡し、戦略的振動を「HARD 族が詰まったときだけ」選択的に発動させる。
-        //   診断/focus(RSI)で既存の HF63 を ALNS にも供給。受理層の判定に使うだけで生スコアには触れない。
-        val hf63 = Hf63Infeasibility()
         for (r in 0 until restarts) {
             if (shouldStop()) break
             coroutineContext.ensureActive()
@@ -320,14 +310,6 @@ object V6NativeOptimizer {
                 // [HF290 役割分担] explore 倍率で受理温度を調整（探索=受理寛容/精製=厳格）。explore=1.0 は従来と同一。
                 val temp = max(0.03, (deadline - nowMs()).toDouble() / max(1.0, per * 1000.0) * options.explore)
                 val curHard = curScore / 1_000_000L
-                // [戦略的振動(HF63選択版)] 深い停滞(OSC_TRIGGER 改善なし) かつ ON 窓 かつ current が globalBest+
-                //   OSC_MAX_HARD 以内 かつ HF63 が HARD 族の構造的充足不能を検出している ときだけ hard を割引して
-                //   実行不可の壁を越える。HF63 ゲートで「越える価値のある壁があるとき」に限定(選択的λ緩和)。
-                //   excursion を bound し暴走を防ぐ。生スコア/globalBest 不変＝Δ×フル無関係・解は退化しない。SA 受理のみ。
-                val hardRelax = if (itersTotal - lastImproveIter > OSC_TRIGGER &&
-                    (iter % OSC_PERIOD) < OSC_ON &&
-                    curHard <= globalScore / 1_000_000L + OSC_MAX_HARD &&
-                    hf63.hardInfeasibleLikely()) OSC_RELAX else 0.0
                 val gdLevel = if (options.accept == AcceptMode.GREAT_DELUGE) {
                     val frac = ((deadline - nowMs()).toDouble() / max(1.0, per * 1000.0)).coerceIn(0.0, 1.0)
                     greatDelugeLevel(gdInitial, globalScore.toDouble(), frac)
@@ -401,7 +383,7 @@ object V6NativeOptimizer {
                     }
                     if (moved) {
                         val improvedCur = ns < curScore
-                        val accepted = improvedCur || glsAccept(ns, curScore, moveAug, curAug, options.accept, temp, gdLevel, rng, hardRelax)
+                        val accepted = improvedCur || glsAccept(ns, curScore, moveAug, curAug, options.accept, temp, gdLevel, rng)
                         if (accepted) {
                             cur[c0i][c0j] = eval.at(c0i, c0j)
                             if (c1i >= 0) cur[c1i][c1j] = eval.at(c1i, c1j)
@@ -452,7 +434,7 @@ object V6NativeOptimizer {
                     }
                     val ns = eval.score()
                     val improvedCur = ns < curScore
-                    val accepted = improvedCur || glsAccept(ns, curScore, moveAug, curAug, options.accept, temp, gdLevel, rng, hardRelax)
+                    val accepted = improvedCur || glsAccept(ns, curScore, moveAug, curAug, options.accept, temp, gdLevel, rng)
                     if (accepted) {
                         cur = fixed; curScore = ns; curAug += moveAug
                         if (ns < globalScore) {
@@ -486,10 +468,7 @@ object V6NativeOptimizer {
                     }
                 }
                 // destroyRepairViolations 用に curReport を周期更新（hint の鮮度確保）。
-                if (iter % 200L == 0L) {
-                    curReport = UnifiedViolationChecker.check(state, cur)
-                    hf63.updateFromBreakdown(curReport.breakdown, itersTotal.toInt())   // [HF63] 族別停滞を追跡(振動の選択発動用)
-                }
+                if (iter % 200L == 0L) curReport = UnifiedViolationChecker.check(state, cur)
                 if (++sinceUpdate >= 64) {
                     for (k in opW.indices) {
                         if (opCnt[k] > 0) opW[k] = (0.8 * opW[k] + 0.2 * (opScore[k] / opCnt[k])).coerceAtLeast(0.05)

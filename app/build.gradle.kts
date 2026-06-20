@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 61
-        versionName = "2.54.0-hf63-selective-osc"
+        versionCode = 62
+        versionName = "2.55.0-revert-oscillation"
     }
 
     buildTypes {
