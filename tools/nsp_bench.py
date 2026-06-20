@@ -14,7 +14,7 @@ MAGI 最適化器の「等価ベンチ」(CRINN 流・実行計測スカラー�
 
 報酬: best_total を反復チェックポイントで平均(=AUC 風。早く良い解へ届くほど高評価)。低いほど良い。
 """
-import random, math, statistics
+import random, math, statistics, json
 
 # ---------------- 合成 NSP インスタンス ----------------
 def make_instance(S, T, K, seed, tight):
@@ -35,28 +35,76 @@ def make_instance(S, T, K, seed, tight):
             if canDo[i][k] and rng.random() < 0.3:
                 lo[i][k] = rng.randint(2, 5)
                 hi[i][k] = lo[i][k] + rng.randint(0, 3)
-    return dict(S=S, T=T, K=K, canDo=canDo, need=need, lo=lo, hi=hi)
+    apt = [[-1] * K for _ in range(S)]   # 合成では apt なし
+    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need, use2=False, lo=lo, hi=hi, apt=apt)
+
+def load_golden(path):
+    """実 state(golden_state.json)を bench inst へ忠実に読み込む。need=shifts[k].need1(定数),
+    canDo=groupShift[group][k]==1, lo/hi=staffRange, apt=groupShiftApt[group][k] を staffRange でクランプ。"""
+    d = json.load(open(path))
+    shifts = d['shifts']; staff = d['staff']; gshift = d['groupShift']; gapt = d['groupShiftApt']
+    K = len(shifts); S = len(staff)
+    import datetime
+    sd = datetime.date.fromisoformat(d['startDate']); ed = datetime.date.fromisoformat(d['endDate'])
+    T = (ed - sd).days + 1
+    def need_of(s, key):
+        v = s.get(key, '')
+        if isinstance(v, int): return v
+        v = (v or '').strip()
+        return int(v) if v.lstrip('-').isdigit() else -1
+    need = [[need_of(shifts[k], 'need1')] * T for k in range(K)]
+    need_hi = [[need_of(shifts[k], 'need2')] * T for k in range(K)]
+    canDo = [[gshift[staff[i]['groupIdx']][k] == 1 for k in range(K)] for i in range(S)]
+    lo = [[0] * K for _ in range(S)]; hi = [[T] * K for _ in range(S)]
+    for key, r in d['staffRange'].items():
+        i, k = map(int, key.split(','))
+        if isinstance(r.get('lo'), int) or (str(r.get('lo', '')).strip().lstrip('-').isdigit()):
+            lo[i][k] = int(r['lo'])
+        if isinstance(r.get('hi'), int) or (str(r.get('hi', '')).strip().lstrip('-').isdigit()):
+            hi[i][k] = int(r['hi'])
+    # apt: 群目標を canDo かつ staffRange[lo,hi] でクランプ(Problem と同じ)
+    apt = [[-1] * K for _ in range(S)]
+    for i in range(S):
+        g = staff[i]['groupIdx']; row = gapt[g] if g < len(gapt) else []
+        for k in range(K):
+            v = row[k] if k < len(row) else ''
+            t = int(v) if str(v).strip().lstrip('-').isdigit() else -1
+            if t < 0 or not canDo[i][k]: continue
+            if lo[i][k] and t < lo[i][k]: t = lo[i][k]
+            if hi[i][k] != T and t > hi[i][k]: t = hi[i][k]
+            apt[i][k] = t
+    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need_hi, use2=d.get('use2Patterns', False), lo=lo, hi=hi, apt=apt)
 
 def allowed(inst, i):
     return [0] + [k for k in range(1, inst['K']) if inst['canDo'][i][k]]
 
+def staff_pen(inst, i, k, n):
+    """per-staff soft: low(×90)/high(×45)/apt(|n-t|×1)。Kotlin Evaluator/checker と同一式。"""
+    lo, hi, apt = inst['lo'], inst['hi'], inst['apt']
+    p = 0
+    if lo[i][k] and n < lo[i][k]: p += (lo[i][k] - n) * 90
+    if n > hi[i][k]: p += (n - hi[i][k]) * 45
+    if apt[i][k] >= 0: p += abs(n - apt[i][k])
+    return p
+
 def score(inst, sched):
-    S, T, K, need, lo, hi = inst['S'], inst['T'], inst['K'], inst['need'], inst['lo'], inst['hi']
+    S, T, K, need = inst['S'], inst['T'], inst['K'], inst['need']
+    use2, need_hi = inst.get('use2', False), inst.get('need_hi', need)
     hard = 0; soft = 0
     for k in range(1, K):
         for j in range(T):
             cnt = sum(1 for i in range(S) if sched[i][j] == k)
-            if cnt < need[k][j]: hard += need[k][j] - cnt          # covU (HARD)
-            elif cnt > need[k][j]: soft += cnt - need[k][j]         # covO (soft, 重み1)
+            lo_need = need[k][j]
+            hi_need = need_hi[k][j] if (use2 and need_hi[k][j] >= 0) else lo_need
+            if lo_need >= 0 and cnt < lo_need: hard += lo_need - cnt        # covU (HARD)
+            elif hi_need >= 0 and cnt > hi_need: soft += cnt - hi_need      # covO (soft, 重み1)
     cnt = [[0] * K for _ in range(S)]
     for i in range(S):
         for j in range(T):
             cnt[i][sched[i][j]] += 1
     for i in range(S):
         for k in range(1, K):
-            n = cnt[i][k]
-            if lo[i][k] and n < lo[i][k]: soft += (lo[i][k] - n) * 90   # low
-            if n > hi[i][k]: soft += (n - hi[i][k]) * 45                # high
+            soft += staff_pen(inst, i, k, cnt[i][k])
     return hard, soft
 
 def raw(h, s):
@@ -82,13 +130,9 @@ def repair_day(inst, sched, j, rng):
 def repair_day_smart(inst, sched, j, rng, cnt):
     """[soft-aware 修復] 需要穴を埋める際、割当の marginal soft(下限不足の解消 / 上限超過の回避)が
     最小の担当可能者を選ぶ。cnt[i][k]=現状の総回数(呼出側が当日クリア後に算出)。"""
-    S, K, need, lo, hi = inst['S'], inst['K'], inst['need'], inst['lo'], inst['hi']
+    S, K, need = inst['S'], inst['K'], inst['need']
     def marg(i, k):
-        n = cnt[i][k]
-        before = ((lo[i][k] - n) * 90 if lo[i][k] and n < lo[i][k] else 0) + ((n - hi[i][k]) * 45 if n > hi[i][k] else 0)
-        n1 = n + 1
-        after = ((lo[i][k] - n1) * 90 if lo[i][k] and n1 < lo[i][k] else 0) + ((n1 - hi[i][k]) * 45 if n1 > hi[i][k] else 0)
-        return after - before
+        return staff_pen(inst, i, k, cnt[i][k] + 1) - staff_pen(inst, i, k, cnt[i][k])
     order = list(range(1, K)); rng.shuffle(order)
     for k in order:
         want = need[k][j]
@@ -127,18 +171,10 @@ def destroy_repair_staff(inst, sched, rng, smart=False):
     row = sched[i][:]
     for j in range(T):
         sched[i][j] = 0
-    # 職員 i の現状カウント(smart 用)
+    # i は全日休にしたので cnt_i[k>=1]=0(休=T)。割当てるごとに cnt_i を進めて marginal 評価。
     cnt_i = [0] * K
-    for x in range(S):
-        for j in range(T):
-            if x == i: continue
-    # i は全日休にしたので cnt_i[k>=1]=0, 休=T。soft-aware は marginal で評価。
-    lo, hi = inst['lo'], inst['hi']
     def marg(k, n):
-        before = ((lo[i][k] - n) * 90 if lo[i][k] and n < lo[i][k] else 0) + ((n - hi[i][k]) * 45 if n > hi[i][k] else 0)
-        n1 = n + 1
-        after = ((lo[i][k] - n1) * 90 if lo[i][k] and n1 < lo[i][k] else 0) + ((n1 - hi[i][k]) * 45 if n1 > hi[i][k] else 0)
-        return after - before
+        return staff_pen(inst, i, k, n + 1) - staff_pen(inst, i, k, n)
     for j in range(T):
         # この日に i が埋められる被覆穴のあるシフト集合
         cands = [k for k in range(1, K) if inst['canDo'][i][k] and
@@ -218,13 +254,7 @@ def optimize(inst, seed, iters, feats):
                     # [violations 相当] soft 違反セル(休以外)を soft 最小のシフトへ再割当(その職員の現状回数で評価)
                     cnt_i = [0] * K
                     for jj in range(T): cnt_i[cur[i][jj]] += 1
-                    def _m(k):
-                        n = cnt_i[k]
-                        b = ((inst['lo'][i][k]-n)*90 if inst['lo'][i][k] and n<inst['lo'][i][k] else 0)+((n-inst['hi'][i][k])*45 if n>inst['hi'][i][k] else 0)
-                        n1 = n+1
-                        a = ((inst['lo'][i][k]-n1)*90 if inst['lo'][i][k] and n1<inst['lo'][i][k] else 0)+((n1-inst['hi'][i][k])*45 if n1>inst['hi'][i][k] else 0)
-                        return a-b
-                    nw = min(alw[i], key=_m)
+                    nw = min(alw[i], key=lambda k: staff_pen(inst, i, k, cnt_i[k] + 1) - staff_pen(inst, i, k, cnt_i[k]))
                 else:
                     nw = rng.choice(alw[i])
                 old = cur[i][j]; nw = nw
@@ -290,6 +320,26 @@ def run_variant(name, feats, instances, seeds, iters):
     return name, statistics.mean(finals), statistics.mean(hards), statistics.mean(aucs)
 
 def main():
+    import sys
+    if "--real" in sys.argv:
+        inst = load_golden("app/src/test/resources/golden_state.json")
+        print(f"=== REAL golden_state (S={inst['S']} T={inst['T']} K={inst['K']}, +ALNS destroy-repair) ===")
+        rangeN = sum(1 for i in range(inst['S']) for k in range(inst['K']) if inst['lo'][i][k] or inst['hi'][i][k] != inst['T'])
+        aptN = sum(1 for i in range(inst['S']) for k in range(inst['K']) if inst['apt'][i][k] >= 0)
+        print(f"  staffRange セル={rangeN}, apt セル={aptN}, use2={inst['use2']}")
+        print(f"{'variant':<22} {'mean_final(soft)':>16} {'mean_hard':>10} {'mean_AUC':>12}   (低いほど良い)")
+        seeds = list(range(8)); iters = 12000
+        rv = [
+            ("baseline(random rep)", {}),
+            ("+repair(day) soft", {"smart_repair": True}),
+            ("+repair+staff+viol", {"smart_repair": True, "smart_staff": True, "smart_cell": True}),
+        ]
+        rows = [run_variant(n, f, [inst], seeds, iters) for n, f in rv]
+        base = rows[0][3]
+        for n, mf, mh, auc in rows:
+            d = (auc - base) / base * 100 if base else 0
+            print(f"{n:<22} {mf:>16.1f} {mh:>10.2f} {auc:>12.0f}   ({d:+.1f}% vs base)")
+        return
     S, T, K = 8, 21, 5
     # borderline(tight=0.35: 越える価値のある壁) と over(tight=0.7: 過拘束) の2系
     inst_border = [make_instance(S, T, K, sd, 0.35) for sd in range(4)]
