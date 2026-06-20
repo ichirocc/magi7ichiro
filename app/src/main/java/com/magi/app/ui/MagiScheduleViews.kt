@@ -107,6 +107,29 @@ import androidx.compose.ui.input.pointer.pointerInput
  * 文字化けせず取り込める（UTF-8 として bytes を読むと壊れていた）。
  */
 
+/** 実行中の進捗サマリ文字列: 改善率(初期soft→現best) ・ 残り時間 ・ 探索数。読取専用。 */
+internal fun progressSummary(ui: UiState): String {
+    val parts = ArrayList<String>(3)
+    parts += when {
+        ui.bestHard > 0L -> "未解決 ⚠${ui.bestHard}"
+        ui.initSoft > 0L -> {
+            val pct = ((ui.initSoft - ui.bestSoft) * 100L / ui.initSoft).coerceAtLeast(0L)
+            "改善 ${pct}% (${ui.initSoft}→${ui.bestSoft})"
+        }
+        else -> "改善 –"
+    }
+    val secLeft = ((ui.budgetSec * 1000L - ui.elapsedMs).coerceAtLeast(0L) / 1000L)
+    parts += "残り %d:%02d".format(secLeft / 60, secLeft % 60)
+    val it = ui.iters
+    val iterStr = when {
+        it >= 1_000_000L -> "%.1fM回".format(it / 1_000_000.0)
+        it >= 1_000L -> "${it / 1_000L}K回"
+        else -> "${it}回"
+    }
+    parts += iterStr
+    return parts.joinToString("  ・  ")
+}
+
 @Composable
 internal fun LiveScheduleCard(ui: UiState) {
     if (!ui.running || ui.liveSchedule.isEmpty()) return
@@ -114,6 +137,8 @@ internal fun LiveScheduleCard(ui: UiState) {
     val cs = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // [進捗の見える化] 改善率/残り時間/探索数を常時1行で。エンジニア向けログより「あと何分・どれだけ良くなった」を優先。
+            Text(progressSummary(ui), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = cs.primary)
             val cur = ui.liveSchedule
             // 変化セル検出: 前回スナップショットとの差分。holder(非state)で保持し再合成ループを避ける。
             val prevHolder = remember { arrayOfNulls<List<List<Int>>>(1) }

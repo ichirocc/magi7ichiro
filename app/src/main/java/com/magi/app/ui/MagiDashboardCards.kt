@@ -238,7 +238,8 @@ internal fun OperatorNextActionCard(
             if (ui.running) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = plan.fg)
-                    Text("組み立て中…", color = plan.fg, modifier = Modifier.weight(1f))
+                    // [進捗の見える化] 「組み立て中…」だけでなく 改善率/残り時間/探索数 を出す。
+                    Text(progressSummary(ui), color = plan.fg, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 }
             }
             if (plan.bigEnabled) {
