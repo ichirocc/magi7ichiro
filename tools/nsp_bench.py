@@ -127,10 +127,13 @@ def repair_day(inst, sched, j, rng):
                 sched[i][j] = k; have += 1
         avail = avail[idx:]
 
-def repair_day_smart(inst, sched, j, rng, cnt):
+def repair_day_smart(inst, sched, j, rng, cnt, covo=False):
     """[soft-aware 修復] 需要穴を埋める際、割当の marginal soft(下限不足の解消 / 上限超過の回避)が
-    最小の担当可能者を選ぶ。cnt[i][k]=現状の総回数(呼出側が当日クリア後に算出)。"""
+    最小の担当可能者を選ぶ。cnt[i][k]=現状の総回数(呼出側が当日クリア後に算出)。
+    covo=True で、need1 充足後に need2(covO上限)まで「marginal<0(厳密に soft 改善)の職員」だけ追加で埋める
+    (covO ペナルティ0 のまま下限割れ low を解消)。"""
     S, K, need = inst['S'], inst['K'], inst['need']
+    need_hi, use2 = inst['need_hi'], inst['use2']
     def marg(i, k):
         return staff_pen(inst, i, k, cnt[i][k] + 1) - staff_pen(inst, i, k, cnt[i][k])
     order = list(range(1, K)); rng.shuffle(order)
@@ -147,8 +150,21 @@ def repair_day_smart(inst, sched, j, rng, cnt):
             if best_i < 0:
                 break
             sched[best_i][j] = k; cnt[best_i][k] += 1; have += 1
+        if covo:
+            # need2 まで、marginal<0(厳密に soft が下がる=下限割れ職員)だけ追加(covO は出さない)
+            cap = need_hi[k][j] if (use2 and need_hi[k][j] >= 0) else want
+            while have < cap:
+                best_i = -1; best = 0   # marg<0 のみ採用
+                for i in range(S):
+                    if sched[i][j] == 0 and inst['canDo'][i][k]:
+                        m = marg(i, k)
+                        if m < best:
+                            best = m; best_i = i
+                if best_i < 0:
+                    break
+                sched[best_i][j] = k; cnt[best_i][k] += 1; have += 1
 
-def destroy_repair_day(inst, sched, rng, smart=False):
+def destroy_repair_day(inst, sched, rng, smart=False, covo=False):
     """ランダムな1日を破壊(全員休に)→貪欲修復。スライス(列)を snapshot して呼出側が revert 可能に。"""
     T = inst['T']; j = rng.randrange(T)
     col = [sched[i][j] for i in range(inst['S'])]
@@ -159,7 +175,7 @@ def destroy_repair_day(inst, sched, rng, smart=False):
         for i in range(inst['S']):
             for jj in range(T):
                 cnt[i][sched[i][jj]] += 1
-        repair_day_smart(inst, sched, j, rng, cnt)
+        repair_day_smart(inst, sched, j, rng, cnt, covo=covo)
     else:
         repair_day(inst, sched, j, rng)
     return ('day', j, col)
@@ -190,6 +206,8 @@ def destroy_repair_staff(inst, sched, rng, smart=False):
 
 def revert_move(sched, mv):
     kind = mv[0]
+    if kind == 'multi':
+        revert_move(sched, mv[2]); revert_move(sched, mv[1]); return   # 後勝ち→逆順で revert
     if kind == 'day':
         _, j, col = mv
         for i in range(len(col)):
@@ -245,7 +263,13 @@ def optimize(inst, seed, iters, feats):
             # --- 候補手の選択: ALNS destroy-repair(day/staff) or 1セル変更 ---
             r_mv = rng.random(); mv = None; ci = cj = -1; old = -1
             if r_mv < dr_day:
-                mv = destroy_repair_day(inst, cur, rng, smart=feats.get('smart_repair', False))
+                if feats.get("multiday", False):
+                    # [multi-day destroy] 2日を同時に破壊修復(より大きな近傍)。両日のスナップショットを束ねる。
+                    m1 = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False))
+                    m2 = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False))
+                    mv = ('multi', m1, m2)
+                else:
+                    mv = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False))
             elif r_mv < dr_day + dr_staff:
                 mv = destroy_repair_staff(inst, cur, rng, smart=feats.get('smart_staff', False))
             else:
@@ -336,10 +360,7 @@ def main():
             ("R+staff", {**R, "smart_staff": True}),
             ("R+viol", {**R, "smart_cell": True}),
             ("R+staff+viol", {**R, "smart_staff": True, "smart_cell": True}),
-            ("R+oscillation", {**R, "oscillation": True}),
-            ("R+gls+decay", {**R, "gls": True, "gls_decay": True}),
-            ("R+nonlinear_restart", {**R, "nonlinear_restart": True}),
-            ("R+staff+viol+gls+nr", {**R, "smart_staff": True, "smart_cell": True, "gls": True, "gls_decay": True, "nonlinear_restart": True}),
+            ("R+sv+multiday", {**R, "smart_staff": True, "smart_cell": True, "multiday": True}),
         ]
         rows = [run_variant(n, f, [inst], seeds, iters) for n, f in rv]
         ref_final = rows[1][1]   # +repair(day) を基準
