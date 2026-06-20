@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 72
-        versionName = "2.66.0-groupshift-flowrow"
+        versionCode = 73
+        versionName = "2.67.0-earlier-stall-exit"
     }
 
     buildTypes {
