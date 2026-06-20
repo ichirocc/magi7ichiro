@@ -272,6 +272,7 @@ object V6FinalPort {
             state, relinkSched, label.tech,
             shouldStop = shouldStop,
             onPhase = { phase -> progressWatch(phase, null, System.currentTimeMillis() - startMs, budgetMs) },
+            deadlineMs = hardDeadlineMs,   // [残予算ガード] HF66 が後段パスを押し出さないよう全体締切を渡す
         )
         val tPost1 = System.currentTimeMillis()
         val overBudget = tPost1 - startMs > budgetMs
