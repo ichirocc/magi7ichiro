@@ -36,7 +36,14 @@ def make_instance(S, T, K, seed, tight):
                 lo[i][k] = rng.randint(2, 5)
                 hi[i][k] = lo[i][k] + rng.randint(0, 3)
     apt = [[-1] * K for _ in range(S)]   # 合成では apt なし
-    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need, use2=False, lo=lo, hi=hi, apt=apt)
+    sgrp = [i % 3 for i in range(S)]     # 3群に割当(c41 群レンジ検証用)
+    # c41: (群, シフト, 日次下限, 日次上限)。各日 群のシフト人数を [lo,hi] に収める制約(重み1)。
+    c41 = []
+    for g in range(3):
+        for k in range(1, K):
+            if rng.random() < 0.15:
+                c41.append((g, k, 0, 1))   # 日次 群人数 <=1 等の上限制約
+    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need, use2=False, lo=lo, hi=hi, apt=apt, sgrp=sgrp, c41=c41)
 
 def load_golden(path):
     """実 state(golden_state.json)を bench inst へ忠実に読み込む。need=shifts[k].need1(定数),
@@ -73,7 +80,19 @@ def load_golden(path):
             if lo[i][k] and t < lo[i][k]: t = lo[i][k]
             if hi[i][k] != T and t > hi[i][k]: t = hi[i][k]
             apt[i][k] = t
-    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need_hi, use2=d.get('use2Patterns', False), lo=lo, hi=hi, apt=apt)
+    sgrp = [staff[i]['groupIdx'] for i in range(S)]
+    # cons41: グループ別 日次レンジ。kigou→index, l/u を解く。
+    gkig = {g.get('kigou', g.get('name', str(idx))): idx for idx, g in enumerate(d.get('groups', []))}
+    skig = {shifts[k].get('kigou', ''): k for k in range(K)}
+    c41 = []
+    for c in d.get('cons41', []):
+        gi = gkig.get(c.get('groupKigou')); ki = skig.get(c.get('shiftKigou'))
+        lv = str(c.get('l', '')).strip(); uv = str(c.get('u', '')).strip()
+        if gi is None or ki is None: continue
+        lo_ = int(lv) if lv.lstrip('-').isdigit() else 0
+        hi_ = int(uv) if uv.lstrip('-').isdigit() else 10**9
+        c41.append((gi, ki, lo_, hi_))
+    return dict(S=S, T=T, K=K, canDo=canDo, need=need, need_hi=need_hi, use2=d.get('use2Patterns', False), lo=lo, hi=hi, apt=apt, sgrp=sgrp, c41=c41)
 
 def allowed(inst, i):
     return [0] + [k for k in range(1, inst['K']) if inst['canDo'][i][k]]
@@ -105,6 +124,14 @@ def score(inst, sched):
     for i in range(S):
         for k in range(1, K):
             soft += staff_pen(inst, i, k, cnt[i][k])
+    # c41: グループ別 日次レンジ(重み1)
+    c41 = inst.get('c41'); sgrp = inst.get('sgrp')
+    if c41 and sgrp:
+        for (g, k, lo_, hi_) in c41:
+            for j in range(T):
+                z = sum(1 for i in range(S) if sgrp[i] == g and sched[i][j] == k)
+                if z < lo_: soft += lo_ - z
+                elif z > hi_: soft += z - hi_
     return hard, soft
 
 def raw(h, s):
@@ -127,15 +154,26 @@ def repair_day(inst, sched, j, rng):
                 sched[i][j] = k; have += 1
         avail = avail[idx:]
 
-def repair_day_smart(inst, sched, j, rng, cnt, covo=False):
+def repair_day_smart(inst, sched, j, rng, cnt, covo=False, c41aware=False):
     """[soft-aware 修復] 需要穴を埋める際、割当の marginal soft(下限不足の解消 / 上限超過の回避)が
     最小の担当可能者を選ぶ。cnt[i][k]=現状の総回数(呼出側が当日クリア後に算出)。
-    covo=True で、need1 充足後に need2(covO上限)まで「marginal<0(厳密に soft 改善)の職員」だけ追加で埋める
-    (covO ペナルティ0 のまま下限割れ low を解消)。"""
+    covo=True で need2 まで marginal<0 のみ追加。c41aware=True で群レンジ(c41)の日次 marginal も加味。"""
     S, K, need = inst['S'], inst['K'], inst['need']
     need_hi, use2 = inst['need_hi'], inst['use2']
+    c41, sgrp = (inst.get('c41') or []), inst.get('sgrp')
+    def c41marg(i, k):
+        if not c41aware or not c41 or sgrp is None: return 0
+        g = sgrp[i]; d = 0
+        for (cg, ck, lo_, hi_) in c41:
+            if cg != g or ck != k: continue
+            z = sum(1 for x in range(S) if sgrp[x] == g and sched[x][j] == k)
+            before = (lo_ - z if z < lo_ else 0) + (z - hi_ if z > hi_ else 0)
+            z1 = z + 1
+            after = (lo_ - z1 if z1 < lo_ else 0) + (z1 - hi_ if z1 > hi_ else 0)
+            d += after - before
+        return d
     def marg(i, k):
-        return staff_pen(inst, i, k, cnt[i][k] + 1) - staff_pen(inst, i, k, cnt[i][k])
+        return staff_pen(inst, i, k, cnt[i][k] + 1) - staff_pen(inst, i, k, cnt[i][k]) + c41marg(i, k)
     order = list(range(1, K)); rng.shuffle(order)
     for k in order:
         want = need[k][j]
@@ -164,7 +202,7 @@ def repair_day_smart(inst, sched, j, rng, cnt, covo=False):
                     break
                 sched[best_i][j] = k; cnt[best_i][k] += 1; have += 1
 
-def destroy_repair_day(inst, sched, rng, smart=False, covo=False):
+def destroy_repair_day(inst, sched, rng, smart=False, covo=False, c41aware=False):
     """ランダムな1日を破壊(全員休に)→貪欲修復。スライス(列)を snapshot して呼出側が revert 可能に。"""
     T = inst['T']; j = rng.randrange(T)
     col = [sched[i][j] for i in range(inst['S'])]
@@ -175,7 +213,7 @@ def destroy_repair_day(inst, sched, rng, smart=False, covo=False):
         for i in range(inst['S']):
             for jj in range(T):
                 cnt[i][sched[i][jj]] += 1
-        repair_day_smart(inst, sched, j, rng, cnt, covo=covo)
+        repair_day_smart(inst, sched, j, rng, cnt, covo=covo, c41aware=c41aware)
     else:
         repair_day(inst, sched, j, rng)
     return ('day', j, col)
@@ -269,7 +307,7 @@ def optimize(inst, seed, iters, feats):
                     m2 = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False))
                     mv = ('multi', m1, m2)
                 else:
-                    mv = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False))
+                    mv = destroy_repair_day(inst, cur, rng, smart=feats.get("smart_repair", False), covo=feats.get("covo_aware", False), c41aware=feats.get("c41aware", False))
             elif r_mv < dr_day + dr_staff:
                 mv = destroy_repair_staff(inst, cur, rng, smart=feats.get('smart_staff', False))
             else:
@@ -381,6 +419,7 @@ def main():
         ("+repair+staff", {"smart_repair": True, "smart_staff": True}),
         ("+repair+viol", {"smart_repair": True, "smart_cell": True}),
         ("+repair+staff+viol", {"smart_repair": True, "smart_staff": True, "smart_cell": True}),
+        ("+rsv+c41aware", {"smart_repair": True, "smart_staff": True, "smart_cell": True, "c41aware": True}),
     ]
     # 真に過拘束で destroy-repair でも hard>0 が残る tier(=脱出が効くなら効く領域)
     inst_hard = [make_instance(S, T, K, sd + 200, 1.0) for sd in range(4)]

@@ -865,7 +865,24 @@ object V6NativeOptimizer {
         }
         val covJ = IntArray(p.K)
         for (i in 0 until p.S) { val k = schedule[i][j]; if (k in 0 until p.K) covJ[k]++ }
-        // repair: 各勤務シフトの需要を soft 最小の休スタッフで満たす。
+        // [c41-aware / 実測 tools/nsp_bench.py: 群レンジ(cons41)があると小幅改善・無ければゼロ overhead で無害]
+        //   群の「日次人数レンジ(cons41)」も marginal に加味し、群レンジ(上下限)も同時に研磨する。
+        val hasC41 = p.cons41.isNotEmpty()
+        val grpCnt = if (hasC41) Array(p.G) { IntArray(p.K) } else emptyArray()
+        if (hasC41) for (i in 0 until p.S) { val k = schedule[i][j]; if (k in 0 until p.K) grpCnt[p.sgrp[i]][k]++ }
+        fun c41DayMarg(g: Int, k: Int): Long {
+            if (!hasC41) return 0L
+            var d = 0L
+            for (c in p.cons41) {
+                if (c.groupIdx != g || c.shiftIdx != k) continue
+                val z = grpCnt[g][k]; val z1 = z + 1
+                val before = (if (z < c.l) c.l - z else 0) + (if (z > c.u) z - c.u else 0)
+                val after = (if (z1 < c.l) c.l - z1 else 0) + (if (z1 > c.u) z1 - c.u else 0)
+                d += (after - before).toLong()
+            }
+            return d
+        }
+        // repair: 各勤務シフトの需要を soft(個人 low/high/apt ＋ 群レンジ c41)最小の休スタッフで満たす。
         for (k in 1 until p.K) {
             val need = p.need1[k][j]
             if (need <= 0) continue
@@ -874,11 +891,12 @@ object V6NativeOptimizer {
                 var bestI = -1; var bestDelta = Long.MAX_VALUE
                 for (i in 0 until p.S) {
                     if (schedule[i][j] != 0 || p.wish[i][j] >= 0 || !p.canDo(i, k)) continue
-                    val delta = staffCountPenaltyAt(p, i, k, cnt[i][k] + 1) - staffCountPenaltyAt(p, i, k, cnt[i][k])
+                    val delta = staffCountPenaltyAt(p, i, k, cnt[i][k] + 1) - staffCountPenaltyAt(p, i, k, cnt[i][k]) + c41DayMarg(p.sgrp[i], k)
                     if (delta < bestDelta) { bestDelta = delta; bestI = i }
                 }
                 if (bestI < 0) break
                 schedule[bestI][j] = k; cnt[bestI][k]++; cnt[bestI][0]--; covJ[k]++; miss--
+                if (hasC41) grpCnt[p.sgrp[bestI]][k]++
             }
         }
     }
