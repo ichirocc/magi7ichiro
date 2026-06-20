@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 67
-        versionName = "2.61.0-progress-visibility"
+        versionCode = 68
+        versionName = "2.62.0-tally-tap-detail"
     }
 
     buildTypes {

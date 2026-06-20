@@ -943,6 +943,28 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         applyStructure(st.copy(staffRange = st.staffRange - "$i,$k"))
     }
 
+    /** [直せる導線] 集計セル(職員別)の違反詳細用しきい値: 下限/上限(staffRange)・目標(apt実効)。未設定は null。 */
+    fun staffCellLimits(i: Int, k: Int): Triple<Int?, Int?, Int?> {
+        val st = state ?: return Triple(null, null, null)
+        val p = cachedProblem(st)
+        if (i !in 0 until p.S || k !in 0 until p.K) return Triple(null, null, null)
+        val lo = p.rangeLo[i][k].let { if (it == Int.MIN_VALUE || it == 0) null else it }
+        val hi = p.rangeHi[i][k].let { if (it == Int.MAX_VALUE) null else it }
+        val apt = p.apt[i][k].let { if (it < 0) null else it }
+        return Triple(lo, hi, apt)
+    }
+
+    /** [直せる導線] 集計セル(日別)の必要数レンジ lo..hi（need1/need2）。lo<0(対象外)は null。 */
+    fun needCellLimits(k: Int, j: Int): Pair<Int, Int>? {
+        val st = state ?: return null
+        val p = cachedProblem(st)
+        if (k !in 0 until p.K || j !in 0 until p.T) return null
+        val lo = p.need1[k][j]
+        if (lo < 0) return null
+        val hi = if (p.use2 && p.need2[k][j] >= 0) p.need2[k][j] else lo
+        return lo to hi
+    }
+
     /** [回数センター] 個人別の回数(上下限)と適切回数(apt)を職員×シフトで統合した一覧。
      *  staffRange または apt(実効=担当可＆クランプ後)が効くセルのみ返す。aptEff=実効目標(-1=なし),
      *  aptRaw=群目標の生値(-1=なし。aptEff と異なればクランプされている)。hasRange=個人別の上下限あり。 */
