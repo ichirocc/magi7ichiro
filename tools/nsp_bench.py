@@ -323,22 +323,30 @@ def main():
     import sys
     if "--real" in sys.argv:
         inst = load_golden("app/src/test/resources/golden_state.json")
-        print(f"=== REAL golden_state (S={inst['S']} T={inst['T']} K={inst['K']}, +ALNS destroy-repair) ===")
         rangeN = sum(1 for i in range(inst['S']) for k in range(inst['K']) if inst['lo'][i][k] or inst['hi'][i][k] != inst['T'])
         aptN = sum(1 for i in range(inst['S']) for k in range(inst['K']) if inst['apt'][i][k] >= 0)
-        print(f"  staffRange セル={rangeN}, apt セル={aptN}, use2={inst['use2']}")
-        print(f"{'variant':<22} {'mean_final(soft)':>16} {'mean_hard':>10} {'mean_AUC':>12}   (低いほど良い)")
-        seeds = list(range(8)); iters = 12000
+        print(f"=== REAL golden_state (S={inst['S']} T={inst['T']} K={inst['K']}, staffRange={rangeN} apt={aptN} use2={inst['use2']}, +ALNS destroy-repair) ===")
+        print(f"  ※ final(最終品質)=製品の主指標 / AUC(速度)=参考。base=+repair(day, 2.57実装済) 比。")
+        seeds = list(range(8)); iters = 10000
+        # 全機構を final 品質で網羅再評価(repair の上での寄与)。R=repair(day)
+        R = {"smart_repair": True}
         rv = [
-            ("baseline(random rep)", {}),
-            ("+repair(day) soft", {"smart_repair": True}),
-            ("+repair+staff+viol", {"smart_repair": True, "smart_staff": True, "smart_cell": True}),
+            ("random repair", {}),
+            ("R: repair(day) [2.57]", R),
+            ("R+staff", {**R, "smart_staff": True}),
+            ("R+viol", {**R, "smart_cell": True}),
+            ("R+staff+viol", {**R, "smart_staff": True, "smart_cell": True}),
+            ("R+oscillation", {**R, "oscillation": True}),
+            ("R+gls+decay", {**R, "gls": True, "gls_decay": True}),
+            ("R+nonlinear_restart", {**R, "nonlinear_restart": True}),
+            ("R+staff+viol+gls+nr", {**R, "smart_staff": True, "smart_cell": True, "gls": True, "gls_decay": True, "nonlinear_restart": True}),
         ]
         rows = [run_variant(n, f, [inst], seeds, iters) for n, f in rv]
-        base = rows[0][3]
+        ref_final = rows[1][1]   # +repair(day) を基準
+        print(f"{'variant':<24} {'final(soft)':>12} {'vs R':>8} {'hard':>6} {'AUC':>10}")
         for n, mf, mh, auc in rows:
-            d = (auc - base) / base * 100 if base else 0
-            print(f"{n:<22} {mf:>16.1f} {mh:>10.2f} {auc:>12.0f}   ({d:+.1f}% vs base)")
+            d = (mf - ref_final) / ref_final * 100 if ref_final else 0
+            print(f"{n:<24} {mf:>12.1f} {d:>+7.1f}% {mh:>6.2f} {auc:>10.0f}")
         return
     S, T, K = 8, 21, 5
     # borderline(tight=0.35: 越える価値のある壁) と over(tight=0.7: 過拘束) の2系
