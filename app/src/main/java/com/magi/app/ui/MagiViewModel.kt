@@ -997,23 +997,19 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         return rows.sortedWith(compareBy({ it.i }, { it.k }))
     }
 
-    // ---- [回数設定画面] シフト軸 / 個人軸の統合ビュー（apt=理想 / cons41=群の最少・最大 / staffRange=個人の最少・最大）----
-    data class GroupRule(val g: Int, val groupKigou: String, val groupName: String, val min: String, val ideal: String, val max: String)
+    // ---- [回数設定画面] シフト軸 / 個人軸の統合ビュー（apt=月の目標 / staffRange=個人の月 最少・最大）----
+    //   cons41(群の1日人数)は「回数(月)」とは別軸のため本画面では扱わない（制約画面で編集）。
+    data class GroupRule(val g: Int, val groupName: String, val ideal: String)
     data class IndivRule(val i: Int, val staffName: String, val min: String, val max: String)
     data class ShiftRuleBlock(val k: Int, val kigou: String, val name: String, val groups: List<GroupRule>, val indivs: List<IndivRule>)
 
     /** シフトタブ用: 各シフトの「群の回数(最少|理想|最大)」「個人の回数(最少|最大)」を集約。設定のある行のみ。 */
     fun shiftRuleBlocks(): List<ShiftRuleBlock> {
         val st = state ?: return emptyList()
-        val c41 = HashMap<String, Pair<String, String>>()
-        for (c in st.cons41) c41["${c.groupKigou} ${c.shiftKigou}"] = c.l to c.u
         return st.shifts.mapIndexed { k, sh ->
             val groups = st.groups.mapIndexedNotNull { g, grp ->
                 val ideal = st.groupShiftApt.getOrNull(g)?.getOrNull(k)?.trim() ?: ""
-                val lu = c41["${grp.kigou} ${sh.kigou}"]
-                val mn = lu?.first ?: ""; val mx = lu?.second ?: ""
-                if (ideal.isBlank() && mn.isBlank() && mx.isBlank()) null
-                else GroupRule(g, grp.kigou, grp.name, mn, ideal, mx)
+                if (ideal.isBlank()) null else GroupRule(g, grp.name, ideal)
             }
             val indivs = st.staff.indices.mapNotNull { i ->
                 val r = st.staffRange["$i,$k"]
@@ -1021,7 +1017,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                 else IndivRule(i, st.staff[i].name, r.lo, r.hi)
             }
             ShiftRuleBlock(k, sh.kigou, sh.name, groups, indivs)
-        }
+        }.filter { it.groups.isNotEmpty() || it.indivs.isNotEmpty() }
     }
 
     data class StaffShiftRule(val k: Int, val kigou: String, val min: String, val max: String)
@@ -1037,7 +1033,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
                 else StaffShiftRule(k, st.shifts[k].kigou, r.lo, r.hi)
             }
             StaffRuleBlock(i, sf.name, rows)
-        }
+        }.filter { it.rows.isNotEmpty() }
     }
 
     // ---- ws3 移植: 希望シフト wishes["i,j"]=シフトindex（採点=pref/hard1。割当やcons3系とは別。UIのみ・モデル/エンジン不変）----
