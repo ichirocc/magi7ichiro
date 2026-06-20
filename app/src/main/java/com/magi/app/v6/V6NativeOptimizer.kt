@@ -282,12 +282,9 @@ object V6NativeOptimizer {
         for (r in 0 until restarts) {
             if (shouldStop()) break
             coroutineContext.ensureActive()
-            // [非線形 restart 摂動] 序盤の restart ほど大きく揺らして多様化、終盤ほど小さく intensify する
-            //   (VNS 流の段階的縮小)。frac=0(初回)→1(最終)。mult を二乗で減衰させ序盤の探索幅を確保。
-            //   摂動は盤面のランダム置換のみでスコア計算に触れず、globalBest は生スコア保持＝解は退化しない。
-            val frac = if (restarts <= 1) 0.0 else r.toDouble() / (restarts - 1)
-            val pertMult = 0.6 + 1.2 * (1.0 - frac) * (1.0 - frac)   // frac0→1.8倍, frac1→0.6倍
-            var cur = if (r == 0) globalBest.copy2D() else perturb(state, globalBest, rng, strength = (0.18 * options.explore * pertMult).coerceIn(0.05, 0.9))
+            // [restart 摂動] 一律 strength=0.18。非線形スケジュール(2.51)は nsp_bench --real の final 品質で
+            //   +101% 悪化と実測されたため revert(序盤の大摂動が強い repair 下で良解を壊し最終品質を損なう)。
+            var cur = if (r == 0) globalBest.copy2D() else perturb(state, globalBest, rng, strength = (0.18 * options.explore).coerceIn(0.05, 0.6))
             cur = hf67HardRepair(state, cur, rng).schedule
             var curReport = UnifiedViolationChecker.check(state, cur)
             eval.reset(cur)
@@ -840,22 +837,66 @@ object V6NativeOptimizer {
         destroyRepairDayAt(state, schedule, rng.nextInt(p.T), rng)
     }
 
+    /** [soft-aware repair] 割当 i→shift k の per-staff soft(low/high/apt, checker と同一式)を count n で評価。 */
+    private fun staffCountPenaltyAt(p: Problem, i: Int, k: Int, n: Int): Long {
+        var pen = 0L
+        val lo = p.rangeLo[i][k]; val hi = p.rangeHi[i][k]
+        if (lo != Int.MIN_VALUE && lo != 0 && n < lo) pen += (lo - n).toLong() * 90L
+        if (hi != Int.MAX_VALUE && n > hi) pen += (n - hi).toLong() * 45L
+        val t = p.apt[i][k]
+        if (t >= 0) pen += kotlin.math.abs(n - t).toLong()
+        return pen
+    }
+
     private fun destroyRepairDayAt(state: MagiState, schedule: Array<IntArray>, j: Int, rng: Random) {
         val p = cachedProblem(state)
-        val order = ArrayList<Int>(p.S)
-        for (idx in 0 until p.S) order.add(idx)
-        java.util.Collections.shuffle(order, rng)
-        // [差分化] day j の coverage のみ O(S) で数える（全 T×K スキャンを回避）。
+        if (p.T == 0) return
+        // [soft-aware destroy-repair / 実測検証 tools/nsp_bench.py] 従来はランダム順で穴を埋めるだけ(soft無視)で、
+        //   等価ベンチでは soft-aware 修復が AUC -24%〜-34% と唯一の大幅改善だった。ここで同じレバーを適用:
+        //   非希望セルを休へ destroy → 各需要を「割当の marginal soft が最小の休スタッフ」で repair。
+        //   休→k のみ移すため被覆穴を新たに作らない。希望固定は保持。受理(SA/isBetter)が最終採否=安全。
+        val cnt = Array(p.S) { IntArray(p.K) }
+        for (i in 0 until p.S) for (jj in 0 until p.T) { val k = schedule[i][jj]; if (k in 0 until p.K) cnt[i][k]++ }
+        // destroy: 非希望セルを休(0)へ。cnt も同期。
+        for (i in 0 until p.S) {
+            if (p.wish[i][j] >= 0) continue
+            val old = schedule[i][j]
+            if (old != 0 && old in 0 until p.K) { schedule[i][j] = 0; cnt[i][old]--; cnt[i][0]++ }
+        }
         val covJ = IntArray(p.K)
         for (i in 0 until p.S) { val k = schedule[i][j]; if (k in 0 until p.K) covJ[k]++ }
-        for (k in 0 until p.K) {
+        // [c41-aware / 実測 tools/nsp_bench.py: 群レンジ(cons41)があると小幅改善・無ければゼロ overhead で無害]
+        //   群の「日次人数レンジ(cons41)」も marginal に加味し、群レンジ(上下限)も同時に研磨する。
+        val hasC41 = p.cons41.isNotEmpty()
+        val grpCnt = if (hasC41) Array(p.G) { IntArray(p.K) } else emptyArray()
+        if (hasC41) for (i in 0 until p.S) { val k = schedule[i][j]; if (k in 0 until p.K) grpCnt[p.sgrp[i]][k]++ }
+        fun c41DayMarg(g: Int, k: Int): Long {
+            if (!hasC41) return 0L
+            var d = 0L
+            for (c in p.cons41) {
+                if (c.groupIdx != g || c.shiftIdx != k) continue
+                val z = grpCnt[g][k]; val z1 = z + 1
+                val before = (if (z < c.l) c.l - z else 0) + (if (z > c.u) z - c.u else 0)
+                val after = (if (z1 < c.l) c.l - z1 else 0) + (if (z1 > c.u) z1 - c.u else 0)
+                d += (after - before).toLong()
+            }
+            return d
+        }
+        // repair: 各勤務シフトの需要を soft(個人 low/high/apt ＋ 群レンジ c41)最小の休スタッフで満たす。
+        for (k in 1 until p.K) {
             val need = p.need1[k][j]
             if (need <= 0) continue
             var miss = need - covJ[k]
-            for (i in order) {
-                if (miss <= 0) break
-                if (p.wish[i][j] >= 0 && p.wish[i][j] != k) continue
-                if (p.canDo(i, k) && schedule[i][j] != k) { schedule[i][j] = k; miss-- }
+            while (miss > 0) {
+                var bestI = -1; var bestDelta = Long.MAX_VALUE
+                for (i in 0 until p.S) {
+                    if (schedule[i][j] != 0 || p.wish[i][j] >= 0 || !p.canDo(i, k)) continue
+                    val delta = staffCountPenaltyAt(p, i, k, cnt[i][k] + 1) - staffCountPenaltyAt(p, i, k, cnt[i][k]) + c41DayMarg(p.sgrp[i], k)
+                    if (delta < bestDelta) { bestDelta = delta; bestI = i }
+                }
+                if (bestI < 0) break
+                schedule[bestI][j] = k; cnt[bestI][k]++; cnt[bestI][0]--; covJ[k]++; miss--
+                if (hasC41) grpCnt[p.sgrp[bestI]][k]++
             }
         }
     }
@@ -870,9 +911,30 @@ object V6NativeOptimizer {
         val p = cachedProblem(state)
         val allowed = p.allowedShiftsForStaff(i)
         if (allowed.isEmpty()) return
-        repeat(min(p.T, 3 + rng.nextInt(8))) {
-            val j = rng.nextInt(p.T)
-            if (p.wish[i][j] < 0) schedule[i][j] = allowed[rng.nextInt(allowed.size)]
+        // [soft-aware staff-DR / 実測 tools/nsp_bench.py --real: staff+viol で実データ final -49.5%]
+        //   非希望セルを休へ destroy → 各日の被覆穴を「staff i の marginal soft 最小のシフト」で repair。
+        //   被覆穴のみ埋める(過剰=covO を作らない)。希望固定は保持。スコアリング不変=Δ×フル無関係。
+        val cntI = IntArray(p.K)
+        for (jj in 0 until p.T) { val k = schedule[i][jj]; if (k in 0 until p.K) cntI[k]++ }
+        for (j in 0 until p.T) {
+            if (p.wish[i][j] >= 0) continue
+            val old = schedule[i][j]
+            if (old != 0 && old in 0 until p.K) { schedule[i][j] = 0; cntI[old]--; cntI[0]++ }
+        }
+        for (j in 0 until p.T) {
+            if (p.wish[i][j] >= 0 || schedule[i][j] != 0) continue
+            var bestK = -1; var bestDelta = Long.MAX_VALUE
+            for (k in 1 until p.K) {
+                if (!p.canDo(i, k)) continue
+                val need = p.need1[k][j]
+                if (need <= 0) continue
+                var cov = 0
+                for (x in 0 until p.S) if (schedule[x][j] == k) cov++
+                if (cov >= need) continue
+                val delta = staffCountPenaltyAt(p, i, k, cntI[k] + 1) - staffCountPenaltyAt(p, i, k, cntI[k])
+                if (delta < bestDelta) { bestDelta = delta; bestK = k }
+            }
+            if (bestK >= 0) { schedule[i][j] = bestK; cntI[bestK]++; cntI[0]-- }
         }
     }
 
@@ -886,7 +948,21 @@ object V6NativeOptimizer {
             val j = key.substringAfter(',').toIntOrNull() ?: return@repeat
             if (i !in 0 until p.S || j !in 0 until p.T || p.wish[i][j] >= 0) return@repeat
             val allowed = p.allowedShiftsForStaff(i)
-            if (allowed.isNotEmpty()) schedule[i][j] = allowed[rng.nextInt(allowed.size)]
+            if (allowed.isEmpty()) return@repeat
+            // [soft-aware violations / 実測で実データ final -22.6%] 違反セルを、staff i の現状回数で
+            //   marginal soft(old→k)最小のシフトへ再割当(従来はランダム)。スコアリング不変=Δ×フル無関係。
+            val cntI = IntArray(p.K)
+            for (jj in 0 until p.T) { val k = schedule[i][jj]; if (k in 0 until p.K) cntI[k]++ }
+            val old = schedule[i][j]
+            var bestK = old; var bestDelta = Long.MAX_VALUE
+            for (k in allowed) {
+                if (k == old) continue
+                val dOld = if (old in 0 until p.K) staffCountPenaltyAt(p, i, old, cntI[old] - 1) - staffCountPenaltyAt(p, i, old, cntI[old]) else 0L
+                val dK = staffCountPenaltyAt(p, i, k, cntI[k] + 1) - staffCountPenaltyAt(p, i, k, cntI[k])
+                val delta = dOld + dK
+                if (delta < bestDelta) { bestDelta = delta; bestK = k }
+            }
+            if (bestK != old) schedule[i][j] = bestK
         }
     }
 
