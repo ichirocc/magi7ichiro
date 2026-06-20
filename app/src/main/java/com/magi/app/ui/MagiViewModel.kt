@@ -1136,8 +1136,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             ConstraintFamilyView("cons3n", "禁止の並び", st.cons3n.map { seq(it.pattern) }),
             ConstraintFamilyView("cons3m", "推奨の並び", st.cons3m.map { seq(it.pattern) }),
             ConstraintFamilyView("cons3mn", "回避の並び", st.cons3mn.map { seq(it.pattern) }),
-            ConstraintFamilyView("cons41", "グループ別の回数（上下限）",
-                st.cons41.map { "グループ ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 回" }),
+            ConstraintFamilyView("cons41", "グループ別の1日の人数（上下限）",
+                st.cons41.map { "グループ ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 人/1日" }),
             ConstraintFamilyView("cons42", "グループの組み合わせ禁止",
                 st.cons42.map { "グループ ${it.g1Kigou} の ${it.s1Kigou} と グループ ${it.g2Kigou} の ${it.s2Kigou} は同じ日に不可" }),
         )
@@ -1147,8 +1147,8 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun skillConstraintFamilies(): List<ConstraintFamilyView> {
         val st = state ?: return emptyList()
         return listOf(
-            ConstraintFamilyView("cons41s", "スキル別の回数（上下限）",
-                st.cons41s.map { "スキル ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 回" }),
+            ConstraintFamilyView("cons41s", "スキル別の1日の人数（上下限）",
+                st.cons41s.map { "スキル ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 人/1日" }),
             ConstraintFamilyView("cons42s", "スキルの組み合わせ禁止",
                 st.cons42s.map { "スキル ${it.g1Kigou} の ${it.s1Kigou} と スキル ${it.g2Kigou} の ${it.s2Kigou} は同じ日に不可" }),
         )

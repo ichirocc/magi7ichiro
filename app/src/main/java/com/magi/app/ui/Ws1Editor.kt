@@ -82,7 +82,7 @@ fun Ws1Card(ui: UiState, vm: MagiViewModel) {
             Text("シフト (${v.shifts.size})", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             v.shifts.forEachIndexed { k, s ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${s.kigou}  ${s.name}  (必要数1 ${s.need1.ifBlank { "-" }} / 必要数2 ${s.need2.ifBlank { "-" }})",
+                    Text("${s.kigou}  ${s.name}  (最低 ${s.need1.ifBlank { "-" }}人 / 上限 ${s.need2.ifBlank { "-" }}人)",
                         fontSize = 12.sp, modifier = Modifier.weight(1f))
                     EditRowButton(onClick = { dialog = Ws1Dialog.EditShift(k, s.name, s.kigou, s.need1, s.need2) })
                     if (v.shifts.size > 1) {
@@ -230,8 +230,8 @@ private fun ShiftDialog(
         W1Text("記号 (kigou)", kigou) { kigou = it }
         W1Text("名称", name) { name = it }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            W1Field("必要数1", need1, Modifier.width(140.dp)) { need1 = it }
-            W1Field("必要数2", need2, Modifier.width(140.dp)) { need2 = it }
+            W1Field("最低人数", need1, Modifier.width(140.dp)) { need1 = it }
+            W1Field("上限人数(2パターン時)", need2, Modifier.width(140.dp)) { need2 = it }
         }
     }
 }

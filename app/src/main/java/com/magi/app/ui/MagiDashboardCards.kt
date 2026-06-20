@@ -315,9 +315,9 @@ internal fun CoverageDiagnosisCard(ui: UiState) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("人員不足の原因", style = MaterialTheme.typography.titleMedium)
             val headline = when {
-                diag.allInfeasible -> "不足 ${diag.totalShortfall} 件は全て充足不可。今のデータでは満たせません（想定内）。"
-                diag.infeasibleSlots == 0 -> "不足 ${diag.totalShortfall} 件は枠が足りています。再実行や設定の見直しで解消し得ます。"
-                else -> "不足 ${diag.totalShortfall} 件 — 充足不可 ${diag.infeasibleSlots} 枠 / 充足可能 ${diag.fixableSlots} 枠。"
+                diag.allInfeasible -> "不足 ${diag.totalShortfall} 人は全て充足不可。今のデータでは満たせません（想定内）。"
+                diag.infeasibleSlots == 0 -> "不足 ${diag.totalShortfall} 人は枠が足りています。再実行や設定の見直しで解消し得ます。"
+                else -> "不足 ${diag.totalShortfall} 人 — 充足不可 ${diag.infeasibleSlots} 枠 / 充足可能 ${diag.fixableSlots} 枠。"
             }
             Text(headline, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
             for (s in diag.shortfalls.take(6)) {
