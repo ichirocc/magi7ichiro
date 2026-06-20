@@ -120,19 +120,36 @@ def destroy_repair_day(inst, sched, rng, smart=False):
         repair_day(inst, sched, j, rng)
     return ('day', j, col)
 
-def destroy_repair_staff(inst, sched, rng):
-    """ランダムな1職員の全日を破壊→各日 個別に貪欲修復(被覆の穴を埋める)。行を snapshot。"""
-    S, T = inst['S'], inst['T']; i = rng.randrange(S)
+def destroy_repair_staff(inst, sched, rng, smart=False):
+    """ランダムな1職員の全日を破壊→各日 個別に貪欲修復(被覆の穴を埋める)。行を snapshot。
+    smart=True で、穴を埋める際に複数候補シフトから marginal soft 最小を選ぶ(soft-aware)。"""
+    S, T, K = inst['S'], inst['T'], inst['K']; i = rng.randrange(S)
     row = sched[i][:]
     for j in range(T):
         sched[i][j] = 0
-    # その職員が埋められる被覆穴を貪欲に埋める(なければ休のまま)
+    # 職員 i の現状カウント(smart 用)
+    cnt_i = [0] * K
+    for x in range(S):
+        for j in range(T):
+            if x == i: continue
+    # i は全日休にしたので cnt_i[k>=1]=0, 休=T。soft-aware は marginal で評価。
+    lo, hi = inst['lo'], inst['hi']
+    def marg(k, n):
+        before = ((lo[i][k] - n) * 90 if lo[i][k] and n < lo[i][k] else 0) + ((n - hi[i][k]) * 45 if n > hi[i][k] else 0)
+        n1 = n + 1
+        after = ((lo[i][k] - n1) * 90 if lo[i][k] and n1 < lo[i][k] else 0) + ((n1 - hi[i][k]) * 45 if n1 > hi[i][k] else 0)
+        return after - before
     for j in range(T):
-        for k in range(1, inst['K']):
-            if inst['canDo'][i][k]:
-                have = sum(1 for x in range(S) if sched[x][j] == k)
-                if have < inst['need'][k][j]:
-                    sched[i][j] = k; break
+        # この日に i が埋められる被覆穴のあるシフト集合
+        cands = [k for k in range(1, K) if inst['canDo'][i][k] and
+                 sum(1 for x in range(S) if sched[x][j] == k) < inst['need'][k][j]]
+        if not cands:
+            continue
+        if smart:
+            k = min(cands, key=lambda kk: marg(kk, cnt_i[kk]))
+        else:
+            k = cands[0]
+        sched[i][j] = k; cnt_i[k] += 1
     return ('staff', i, row)
 
 def revert_move(sched, mv):
@@ -194,10 +211,23 @@ def optimize(inst, seed, iters, feats):
             if r_mv < dr_day:
                 mv = destroy_repair_day(inst, cur, rng, smart=feats.get('smart_repair', False))
             elif r_mv < dr_day + dr_staff:
-                mv = destroy_repair_staff(inst, cur, rng)
+                mv = destroy_repair_staff(inst, cur, rng, smart=feats.get('smart_staff', False))
             else:
                 i = rng.randrange(S); j = rng.randrange(T)
-                old = cur[i][j]; nw = rng.choice(alw[i])
+                if feats.get('smart_cell', False) and cur[i][j] != 0:
+                    # [violations 相当] soft 違反セル(休以外)を soft 最小のシフトへ再割当(その職員の現状回数で評価)
+                    cnt_i = [0] * K
+                    for jj in range(T): cnt_i[cur[i][jj]] += 1
+                    def _m(k):
+                        n = cnt_i[k]
+                        b = ((inst['lo'][i][k]-n)*90 if inst['lo'][i][k] and n<inst['lo'][i][k] else 0)+((n-inst['hi'][i][k])*45 if n>inst['hi'][i][k] else 0)
+                        n1 = n+1
+                        a = ((inst['lo'][i][k]-n1)*90 if inst['lo'][i][k] and n1<inst['lo'][i][k] else 0)+((n1-inst['hi'][i][k])*45 if n1>inst['hi'][i][k] else 0)
+                        return a-b
+                    nw = min(alw[i], key=_m)
+                else:
+                    nw = rng.choice(alw[i])
+                old = cur[i][j]; nw = nw
                 if nw == old:
                     checkpoints.append(bestRaw); continue
                 cur[i][j] = nw; ci, cj = i, j
@@ -267,13 +297,11 @@ def main():
     seeds = list(range(6))
     iters = 6000
     variants = [
-        ("baseline", {}),
-        ("+gls", {"gls": True}),
-        ("+gls+decay", {"gls": True, "gls_decay": True}),
-        ("+nonlinear_restart", {"nonlinear_restart": True}),
-        ("+oscillation", {"oscillation": True}),
-        ("+smart_repair", {"smart_repair": True}),
-        ("ALL", {"gls": True, "gls_decay": True, "nonlinear_restart": True, "oscillation": True}),
+        ("baseline(all random)", {}),
+        ("+repair(day)", {"smart_repair": True}),
+        ("+repair+staff", {"smart_repair": True, "smart_staff": True}),
+        ("+repair+viol", {"smart_repair": True, "smart_cell": True}),
+        ("+repair+staff+viol", {"smart_repair": True, "smart_staff": True, "smart_cell": True}),
     ]
     # 真に過拘束で destroy-repair でも hard>0 が残る tier(=脱出が効くなら効く領域)
     inst_hard = [make_instance(S, T, K, sd + 200, 1.0) for sd in range(4)]
@@ -288,7 +316,10 @@ def main():
             d = (auc - base_auc) / base_auc * 100 if base_auc else 0
             print(f"{n:<20} {mf:>12.1f} {mh:>10.2f} {auc:>12.0f}   ({d:+.1f}% vs base)")
 
-    # ---- #2 実測パラメータスイープ(GLS/nonlinear_restart を hard tier で実測) ----
+    # ---- #2 実測パラメータスイープ(GLS/nonlinear_restart を hard tier で実測。--sweep で実行) ----
+    import sys
+    if "--sweep" not in sys.argv:
+        return
     print(f"\n=== PARAM SWEEP on HARD-INFEASIBLE (3seed x 4000iter) ===")
     print(f"{'config':<28} {'mean_final':>12} {'mean_hard':>10} {'mean_AUC':>12}   (低いほど良い)")
     sw_seeds = list(range(3)); sw_iters = 4000
