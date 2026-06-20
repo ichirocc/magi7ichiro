@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 59
-        versionName = "2.52.0-strategic-oscillation"
+        versionCode = 60
+        versionName = "2.53.0-bottleneck-viz"
     }
 
     buildTypes {

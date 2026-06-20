@@ -157,7 +157,9 @@ read-only・ダッシュボードの SettingIssuesCard に常時=実行前に表
 - A) 下限の合計 > 必要数(上限)の合計 → 全員の下限を同時に満たせず過剰配置/下限割れが不可避。
 - B) **全担当者に上限**があり 上限の合計 < 必要数 → 席を埋めきれず人員不足(covU)。`allCapped` ガードは CLAUDE.md の
   「未設定者は無制限なので誤判定しない」設計と一致（Dﾃ=上限計10だが現状33＝未設定者ありでは発火しない）。
-未着手の発展: ②ボトルネック可視化の集約(セル着色は TallyCard に既存), ③hard→soft の What-if 提案(checkResultWorse で部分的に既存)。
+発展: ②**ボトルネック可視化の集約(2.53.0 完了)** = `BottleneckCard`(MagiDashboardCards)。countViolations を職員別、
+needViolations を日別に件数集計し多い順 top5 を俯瞰表示(read-only・詳細タブ、BreakdownCard 直後)。セル着色(TallyCard)を補完し
+「どこにしわ寄せが集中するか」を一目で提示。③hard→soft の What-if 提案(checkResultWorse で部分的に既存)は未着手。
 
 ## 停滞脱出の改善（進行中）
 探索本体が過拘束データで空転しがちな問題（停滞脱出の質向上）。
@@ -175,7 +177,10 @@ read-only・ダッシュボードの SettingIssuesCard に常時=実行前に表
   生スコア/globalBest は不変＝Δ×フル無関係・解は退化しない**。暴走防止に excursion 上限(curHard<=globalHard+OSC_MAX_HARD=2)
   と per-step 上限(+2e6)を維持。Python PoC で escape 0/20→20/20・実行不可解 0/20 を確認(/tmp/osc_poc.py)。
   ユニットテスト(StrategicOscillationTest)で壁越え・暴走bound・後方互換を検証。SA受理アームのみ(GD は hard 非増を維持)。
-- (未): HF63 の族別重み係数(HARD×0.125)の振動化(より選択的なλ緩和)、ボトルネック可視化の集約。
+- (保留・判断): HF63 の族別重み係数(HARD×0.125)の振動化(より選択的なλ緩和)は、HF63係数が「探索の重み系へ未配線」で
+  評価器スコアへの深い配線(HF77的に重み意味の業務承認＋Python Δ×フル検証必須=高リスク)か、HF63検出(5000iter)と
+  振動トリガ(600iter)のタイムスケール不整合で実質no-op、のいずれか。かつ 2.52 の一律振動は既に安全・自己修正的
+  (生スコアで globalBest ゲート＋OFF窓で実行可能へ復帰)で選択化の ROI が低い。→ 深い版は要・業務承認時のみ着手。
 
 ## バックログ / 未対応
 1. TallyCard の読取/編集モード完全整合（result専用検査結果の plumbing）。
