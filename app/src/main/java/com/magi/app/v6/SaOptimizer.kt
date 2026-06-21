@@ -36,6 +36,9 @@ data class SaParams(
     val conductor: Boolean = true,
     /** Conductor の停滞しきい値（最良未更新の反復数）。これを超えると再加熱境界で脱出戦略を選ぶ。 */
     val conductorStag: Int = 3000,
+    /** [多様化] 乱数シード。0=従来通り System.nanoTime()。多仮説では各仮説に異なる seed を渡して
+     *  探索を多様化・再現可能にする（各ワーカーは内部で seed xor (w*定数) に分散）。 */
+    val seed: Long = 0L,
 )
 
 data class SaProgress(val bestScore: Long, val totalIters: Long, val elapsedMs: Long)
@@ -74,7 +77,10 @@ class SaOptimizer(private val problem: Problem, private val evaluator: Evaluator
 
         val jobs = (0 until params.workers).map { w ->
             async(Dispatchers.Default) {
-                val seed = System.nanoTime() xor (w.toLong() * -0x61c8864680b583ebL)
+                // [多様化] params.seed!=0 なら各仮説の固有シードを使用（runMultiWorker が仮説ごとに別シードを渡す）。
+                //   0 のときのみ従来の System.nanoTime()。ワーカー内は seed xor (w*定数) で更に分散。
+                val sbase = if (params.seed != 0L) params.seed else System.nanoTime()
+                val seed = sbase xor (w.toLong() * -0x61c8864680b583ebL)
                 runWorker(init, params, Random(seed), start) { localBest, localSol, iters ->
                     synchronized(lock) {
                         totalIters += iters

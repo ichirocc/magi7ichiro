@@ -233,7 +233,7 @@ object V6NativeOptimizer {
         // [HF290 役割分担] explore 倍率で初期温度を調整（探索=高温/精製=低温）。explore=1.0 は従来と同一。
         val saT0 = (10.0 * options.explore).coerceIn(2.0, 40.0)
         val res = SaOptimizer(p, ev).run(
-            SaParams(t0 = saT0, workers = options.workers, budgetMs = budgetSec * 1000L, softPolish = options.softPolish, shouldStop = shouldStop),
+            SaParams(t0 = saT0, workers = options.workers, budgetMs = budgetSec * 1000L, softPolish = options.softPolish, shouldStop = shouldStop, seed = options.seed),
         ) { pr ->
             if (pr.elapsedMs % 1000L < 220L) onProgress("V5 SA", lastReport, pr.totalIters, pr.elapsedMs)
         }

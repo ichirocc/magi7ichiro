@@ -200,9 +200,13 @@ object V6FinalPort {
         //   停滞許容を短縮して「無改善なら早く返す」方針へ。globalBest は生スコア管理のため早期終了でも品質は不変
         //   （最後の改善時刻でタイマをリセット＝改善が続く限り止めない・フェーズ遷移でもリセットで猶予確保）。
         val minRunMs = (budgetMs / 6).coerceIn(8_000L, 45_000L)   // 最初の猶予（早すぎる停止を防ぐ）
-        val stallMs = (budgetMs / 6).coerceAtLeast(20_000L)       // 無改善許容時間（5分予算→50s。旧75s）
+        // [5分強化] HARD>0（=未配布・配れない）は最優先で解消すべき失敗状態。予算の大半を使って多様化
+        //   （多仮説＋HF80 戦略的振動）で HARD クリアを試みる。旧 budgetMs/6(=300s予算で50s) は早すぎ、
+        //   実機ログで HARD=1 のまま 50s で早期終了し残り 250s を捨てていた。→ budgetMs*9/10(=270s)。
+        //   改善が続く限り lastImproveMs がリセットされるので、生産的な探索は自然に締切まで走る。
+        val stallMs = (budgetMs * 9 / 10).coerceAtLeast(20_000L)
         // [5分圧縮] HARD=0到達後（=配布可・残りは研磨のみ）は頭打ちをより早く検知して終了（plateauなので品質は不変）。
-        val stallHardMs = (budgetMs / 8).coerceAtLeast(15_000L)   // 5分予算→37.5s（旧50s）
+        val stallHardMs = (budgetMs / 8).coerceAtLeast(15_000L)   // 5分予算→37.5s
         val lastImproveMs = java.util.concurrent.atomic.AtomicLong(startMs)
         val stagnationFired = java.util.concurrent.atomic.AtomicBoolean(false)
         val bestHard = java.util.concurrent.atomic.AtomicInteger(Int.MAX_VALUE)   // 並列ワーカーから読むため atomic
@@ -292,7 +296,7 @@ object V6FinalPort {
         )) else emptyList()
         val stagnationLog = if (stagnationFired.get()) listOf(MirrorLog(
             level = "I", tag = "EarlyStop",
-            message = "停滞検知: 約${stallMs / 1000}秒間 改善が無いため早期終了（予算${seconds}s中 ${(tPost1 - startMs) / 1000}sで停止・解は最良を維持）",
+            message = "停滞検知: 改善が無いため早期終了（予算${seconds}s中 ${(tPost1 - startMs) / 1000}sで停止・解は最良を維持）",
         )) else emptyList()
         // [最終番兵/多重防御] 全段 keep-best のため通常は発火しないが、万一パイプラインが入力より
         // 悪い結果を返した場合は入力を採用し退化を防ぐ（checkResultWorse をここで配線）。
