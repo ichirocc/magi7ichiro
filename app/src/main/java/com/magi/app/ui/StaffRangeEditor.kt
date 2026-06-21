@@ -133,10 +133,10 @@ fun StaffRangeCard(ui: UiState, vm: MagiViewModel) {
     }
 }
 
-private data class StaffRangeEdit(val i: Int, val k: Int, val lo: String, val hi: String)
+internal data class StaffRangeEdit(val i: Int, val k: Int, val lo: String, val hi: String)
 
 @Composable
-private fun StaffRangeDialog(
+internal fun StaffRangeDialog(
     init: StaffRangeEdit,
     staff: List<String>,
     shifts: List<String>,

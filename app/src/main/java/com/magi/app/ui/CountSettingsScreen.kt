@@ -37,6 +37,7 @@ fun CountSettingsCard(ui: UiState, vm: MagiViewModel) {
     var shiftFilter by rememberSaveable { mutableStateOf(-1) }  // -1=全部
     var openBlock by rememberSaveable { mutableStateOf("") }    // 展開中アコーディオン
     var editRow by rememberSaveable { mutableStateOf("") }      // インライン編集中の行
+    var showAddRange by rememberSaveable { mutableStateOf(false) }  // [追加導線] 個人の上下限 追加ダイアログ
     val q = query.trim()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -58,7 +59,21 @@ fun CountSettingsCard(ui: UiState, vm: MagiViewModel) {
             } else {
                 StaffAxisList(ui, vm, q, openBlock, { openBlock = it }, editRow, { editRow = it })
             }
+            // [追加導線] この画面には個人の上下限を新規追加する手段が無かった（既存行はタップで編集/削除できるが
+            //   手がかりが無く、未設定シフトやレンジ皆無の職員は一覧に出ないため到達不能だった）。
+            //   職員×シフトの上下限をここから追加できるようにする（職員ドロップダウンで未表示の職員も選べる）。
+            AddRowButton("個人の上下限を追加", onClick = { showAddRange = true }, enabled = ui.loaded && !ui.running)
         }
+    }
+    if (showAddRange) {
+        StaffRangeDialog(
+            init = StaffRangeEdit(0, 0, "", ""),
+            staff = ui.staffNames,
+            shifts = vm.shiftKigouList(),
+            allowedFor = { idx -> vm.allowedShiftsFor(idx).toHashSet() },
+            onApply = { i, k, lo, hi -> vm.setStaffRange(i, k, lo, hi); showAddRange = false },
+            onClose = { showAddRange = false },
+        )
     }
 }
 
@@ -101,7 +116,7 @@ private fun ShiftAxisList(
                     b.groups.forEach { g ->
                         val rk = "g-${b.k}-${g.g}"
                         Text(
-                            "${g.groupName}   目標 ${cell(g.ideal)}回",
+                            "${g.groupName}   目標 ${cell(g.ideal)}回   ✎",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.fillMaxWidth().clickable(enabled = !ui.running) { onEdit(if (editRow == rk) "" else rk) }.padding(vertical = 6.dp),
                         )
@@ -117,7 +132,7 @@ private fun ShiftAxisList(
                     b.indivs.forEach { iv ->
                         val rk = "i-${b.k}-${iv.i}"
                         Text(
-                            "${iv.staffName}   ${cell(iv.min)}〜${cell(iv.max)}回",
+                            "${iv.staffName}   ${cell(iv.min)}〜${cell(iv.max)}回   ✎",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.fillMaxWidth().clickable(enabled = !ui.running) { onEdit(if (editRow == rk) "" else rk) }.padding(vertical = 6.dp),
                         )
@@ -154,7 +169,7 @@ private fun StaffAxisList(
                 b.rows.forEach { r ->
                     val rk = "s-${b.i}-${r.k}"
                     Text(
-                        "${r.kigou}   ${cell(r.min)}〜${cell(r.max)}回",
+                        "${r.kigou}   ${cell(r.min)}〜${cell(r.max)}回   ✎",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.fillMaxWidth().clickable(enabled = !ui.running) { onEdit(if (editRow == rk) "" else rk) }.padding(vertical = 6.dp),
                     )
