@@ -371,12 +371,14 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                                 style = MaterialTheme.typography.bodyMedium)
                         }
-                        CountSettingsCard(ui, vm)   // [回数設定画面] シフト軸/個人軸の統合(apt/個人range/群range)
-                        Ws1Card(ui, vm)
-                        SkillGroupCard(ui, vm)
-                        SkillConstraintsCard(ui, vm)   // [校正] スキルC41/C42 をスキルG直下に co-locate
-                        ConstraintsCard(ui, vm)
-                        StaffRangeCard(ui, vm)
+                        // [E6案A] 年次の長大スクロールを、不要カードを畳んで削減。基本情報のみ既定で展開。
+                        //   展開状態は CollapsibleSection 内の rememberSaveable で保持(回転/再構成に耐える)。
+                        CollapsibleSection("基本情報（シフト・グループ・スタッフ）", "yr_ws1", initiallyExpanded = true) { Ws1Card(ui, vm) }
+                        CollapsibleSection("回数設定（適切回数・個人/群レンジ）", "yr_count") { CountSettingsCard(ui, vm) }
+                        CollapsibleSection("スキルグループ", "yr_skillg") { SkillGroupCard(ui, vm) }
+                        CollapsibleSection("スキルのルール（C41s・C42s）", "yr_skillc") { SkillConstraintsCard(ui, vm) }
+                        CollapsibleSection("ルール（並び・窓）", "yr_cons") { ConstraintsCard(ui, vm) }
+                        CollapsibleSection("個人の回数（下限/上限）", "yr_range") { StaffRangeCard(ui, vm) }
                     }
                 }
                 3 -> {

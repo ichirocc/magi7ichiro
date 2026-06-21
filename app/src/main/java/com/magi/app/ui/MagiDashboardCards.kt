@@ -232,7 +232,7 @@ internal fun OperatorNextActionCard(
             Text(plan.headline, style = MaterialTheme.typography.titleLarge, color = plan.fg, fontWeight = FontWeight.Bold)
             // 数字は必ず言葉つきで意味を添える（operator_ux §6）。
             Text(
-                "人手が足りない日：${shortDays}日 ・ できあがり度：${ui.satisfaction}%",
+                "人手が足りない日：${shortDays}日 ・ できあがり度（全体の完成度）：${ui.satisfaction}%",
                 style = MaterialTheme.typography.bodyMedium, color = plan.fg,
             )
             if (ui.running) {
@@ -414,6 +414,13 @@ internal fun V6DashboardCard(v6: V6PortReport?) {
                     label = "人員充足率",
                     sub = "必要人数 ${v6.demand} のうち満たせた割合",
                     accent = tint,
+                )
+                // [D3-full案A] 「できあがり度(全体の完成度)」と「人員充足率(人員の一側面)」は別指標。
+                //   役割の違いを明示し、片方を他方の内訳と誤認させない(架空分解を避ける)。
+                Text(
+                    "※全体の完成度は「できあがり度」（ホーム）で確認。ここは人員の充足のみ。",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(14.dp))
             }

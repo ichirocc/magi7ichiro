@@ -396,3 +396,38 @@ internal fun AppearanceCard(
         }
     }
 }
+
+/**
+ * [E6案A/⛏?] 折りたたみ可能なセクション。年次マスターの長大スクロールを、不要なカードを
+ * 畳んで削減する。展開状態は rememberSaveable(stateKey) で保持し、回転/再構成でも維持(P4対策)。
+ * アンカージャンプ(案B)は LazyColumn 変換が要るため別途・実機目視前提。
+ */
+@Composable
+internal fun CollapsibleSection(
+    title: String,
+    stateKey: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    var expanded by rememberSaveable(stateKey) { mutableStateOf(initiallyExpanded) }
+    Column(Modifier.fillMaxWidth()) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(if (expanded) "▼ 閉じる" else "▶ 開く", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            content()
+        }
+    }
+}
