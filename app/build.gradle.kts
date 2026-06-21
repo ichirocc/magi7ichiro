@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 77
-        versionName = "2.71.0-pro-toggle-weights"
+        versionCode = 78
+        versionName = "2.72.0-skillhdr-guidescope"
     }
 
     buildTypes {

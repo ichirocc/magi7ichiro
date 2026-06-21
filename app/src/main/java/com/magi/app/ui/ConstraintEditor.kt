@@ -84,7 +84,7 @@ fun SkillConstraintsCard(ui: UiState, vm: MagiViewModel) {
     val families = vm.skillConstraintFamilies()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Text("スキルグループのルール（C41 回数・C42 組み合わせ禁止）", style = MaterialTheme.typography.titleMedium)
+            Text("スキルグループのルール（C41s 回数・C42s 組み合わせ禁止）", style = MaterialTheme.typography.titleMedium)
             Text("上の「スキルグループ」に対する専用ルールです。スキル別の回数（上下限）と、スキルの組み合わせ禁止を設定します。",
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
             if (vm.skillGroupKigouList().isEmpty()) {

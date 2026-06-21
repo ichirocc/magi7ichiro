@@ -141,10 +141,14 @@ internal fun SetupGuideCard(ui: UiState, vm: MagiViewModel) {
     val cs = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("入力ガイド（月次の手順）", style = MaterialTheme.typography.titleMedium)
-            GuideRow("① 基本情報", "${c.days}日 / ${c.staff}名 / ${c.shifts}シフト / ${c.groups}グループ", c.days > 0 && c.staff > 0 && c.shifts > 0)
+            Text("初期設定の手順", style = MaterialTheme.typography.titleMedium)
+            // [E1] 番号順(①〜⑤)とeditScopeの不一致を解消：毎月触る項目と年次マスター項目を分けて表示。
+            //   ①基本情報・④制約・⑤回数範囲は「年次マスター」scopeにあり、月次では編集しない。
+            Text("── 毎月 ──", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
             GuideRow("② 希望シフト", "${c.wishes}件", c.wishes > 0)
             GuideRow("③ 必要人数", if (c.needDay > 0) "${c.needDay}件（個別指定）" else "シフト既定のみ", true)
+            Text("── 年次マスター（制度・人員が変わったときだけ）──", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+            GuideRow("① 基本情報", "${c.days}日 / ${c.staff}名 / ${c.shifts}シフト / ${c.groups}グループ", c.days > 0 && c.staff > 0 && c.shifts > 0)
             GuideRow("④ 制約", "${c.constraints}件", true)
             GuideRow("⑤ 個人の回数範囲", "${c.ranges}件", true)
             val next = when {
