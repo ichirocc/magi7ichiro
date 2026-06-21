@@ -260,11 +260,17 @@ private fun StaffDialog(
         W1Text("名称", name) { name = it }
         var open by remember { mutableStateOf(false) }
         Text("グループ", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = { open = true }) { Text(groupKigou.getOrNull(gi) ?: "(なし)") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            groupKigou.forEachIndexed { idx, kg ->
-                DropdownMenuItem(text = { Text(kg, fontFamily = FontFamily.Monospace) },
-                    onClick = { gi = idx; open = false })
+        if (groupKigou.isEmpty()) {
+            // [A7] 鶏卵問題の誘導：グループが無いとスタッフの所属先が決められない（OKは無効）。
+            Text("先に「グループ」を追加してください。スタッフはグループに所属します。",
+                fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
+        } else {
+            OutlinedButton(onClick = { open = true }) { Text(groupKigou.getOrNull(gi) ?: "(なし)") }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                groupKigou.forEachIndexed { idx, kg ->
+                    DropdownMenuItem(text = { Text(kg, fontFamily = FontFamily.Monospace) },
+                        onClick = { gi = idx; open = false })
+                }
             }
         }
     }

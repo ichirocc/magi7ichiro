@@ -126,6 +126,7 @@ fun StaffRangeCard(ui: UiState, vm: MagiViewModel) {
             init = d,
             staff = ui.staffNames,
             shifts = vm.shiftKigouList(),
+            allowedFor = { idx -> vm.allowedShiftsFor(idx).toHashSet() },
             onApply = { i, k, lo, hi -> vm.setStaffRange(i, k, lo, hi); dialog = null },
             onClose = { dialog = null },
         )
@@ -139,6 +140,7 @@ private fun StaffRangeDialog(
     init: StaffRangeEdit,
     staff: List<String>,
     shifts: List<String>,
+    allowedFor: (Int) -> Set<Int>,
     onApply: (Int, Int, String, String) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -175,8 +177,11 @@ private fun StaffRangeDialog(
                         Text(shifts.getOrNull(k) ?: "(選択)")
                     }
                     DropdownMenu(expanded = openK, onDismissRequest = { openK = false }) {
+                        // [A6] 選択中スタッフが担当できるシフトのみ表示（担当不可シフトに下限を付ける矛盾を防ぐ。
+                        //   guidance も事後検出するが、ここで入力時に防止して二重防御）。
+                        val allowed = allowedFor(i)
                         shifts.forEachIndexed { idx, kg ->
-                            DropdownMenuItem(text = { Text(kg) }, onClick = { k = idx; openK = false })
+                            if (idx in allowed) DropdownMenuItem(text = { Text(kg) }, onClick = { k = idx; openK = false })
                         }
                     }
                 }
