@@ -313,6 +313,9 @@ object V6SanityPort {
         val p = Problem(state)
         val s = normalizeSchedule(schedule, p)
         val out = ArrayList<String>()
+        // [スパム対策] 各違反家族の詳細列挙の上限。1パターン把握には十分な件数に絞り、長大化を防ぐ
+        //   （以前は 12〜15。c1/c3m など大量家族の1行が極端に伸びていた）。総数は「(N件)」で常に保持。
+        val DETAIL_CAP = 8
         fun sym(k: Int) = state.shifts.getOrNull(k)?.kigou ?: k.toString()
         fun nm(i: Int) = state.staff.getOrNull(i)?.name ?: "#$i"
         fun day(j: Int) = safeDayLabel(state.startDate, j)
@@ -390,18 +393,44 @@ object V6SanityPort {
             }
         }
 
-        // 1) 被覆: 必要数/現状数の実値（needViolations は k,j キー）
+        // 1) 被覆: 必要数/現状数の実値（needViolations は k,j キー）。covU/covO のみ扱う。
         if (report.needViolations.isNotEmpty()) {
             val cov = coverage(p, s)
             val byFam = LinkedHashMap<String, MutableList<String>>()
             for ((key, cls) in report.needViolations) {
+                // [診断強化②③] c41/c41s は被覆ではなく「群(スキル)×シフトの人数制約」。被覆テンプレ(必要{need1})では
+                //   群が判別できず、休など need1=-1 のシフトで「必要-1」と誤表示される。専用集約(1b)へ回す。
+                if (cls == "vio-c41" || cls == "vio-c41s") continue
                 val parts = key.split(','); val k = parts.getOrNull(0)?.toIntOrNull() ?: continue; val j = parts.getOrNull(1)?.toIntOrNull() ?: continue
                 if (k !in 0 until p.K || j !in 0 until p.T) continue
                 val n1 = p.need1[k][j]; val n2 = if (p.use2) p.need2[k][j] else n1
                 val needStr = if (p.use2 && n2 >= 0 && n2 != n1) "$n1~$n2" else "$n1"
                 byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }.add("${day(j)} ${sym(k)} 必要$needStr/現状${cov[j][k]}")
             }
-            emit(byFam, 12)
+            emit(byFam, DETAIL_CAP)
+        }
+
+        // 1b) [診断強化②③＋スパム削減] c41/c41s = 日次・群(スキル)×シフトの人数が[下限,上限]に収まるか。
+        //     被覆テンプレでは群が消え、複数群が同じ(シフト,日)で1件に潰れて件数も合わない(例 score c41=124 vs 詳細31)。
+        //     cons 行ごとに「群/スキル × シフト・下限上限・違反日数・現状人数範囲」で集約し、どの群が何日どれだけ
+        //     外れたかを最小行で示す（124件→cons行数の数行に圧縮）。
+        run {
+            fun emitCons(rows: List<C41>, fam: String, memberOf: (Int) -> Int, groupSym: (Int) -> String) {
+                for (c in rows) {
+                    var vdays = 0; var minZ = Int.MAX_VALUE; var maxZ = 0
+                    for (j in 0 until p.T) {
+                        var z = 0
+                        for (i in 0 until p.S) if (memberOf(i) == c.groupIdx && s[i][j] == c.shiftIdx) z++
+                        if (z < c.l || z > c.u) { vdays++; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z }
+                    }
+                    if (vdays > 0) {
+                        val range = if (minZ == maxZ) "$minZ" else "$minZ〜$maxZ"
+                        out.add("[D] 違反詳細 $fam: ${groupSym(c.groupIdx)}×${sym(c.shiftIdx)} ${vdays}日違反 (下限${c.l}/上限${c.u}, 現状$range)")
+                    }
+                }
+            }
+            emitCons(p.cons41, "c41", { i -> p.sgrp[i] }, { g -> state.groups.getOrNull(g)?.kigou ?: "群$g" })
+            emitCons(p.cons41s, "c41s", { i -> p.ssk[i] }, { g -> state.skillGroups.getOrNull(g)?.kigou ?: "スキル$g" })
         }
 
         // 2) 回数: 回数/下限/上限（countViolations は i,k キー）
@@ -416,7 +445,7 @@ object V6SanityPort {
                 byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }
                     .add("${nm(i)} ${sym(k)} 回数${cnt[i][k]}" + (lo?.let { " 下限$it" } ?: "") + (hi?.let { " 上限$it" } ?: ""))
             }
-            emit(byFam, 12)
+            emit(byFam, DETAIL_CAP)
         }
 
         // 3) セル違反: 誰の・何日・どのシフト（violations は i,j キー）
@@ -427,7 +456,7 @@ object V6SanityPort {
                 if (i !in 0 until p.S || j !in 0 until p.T) continue
                 byFam.getOrPut(cls.removePrefix("vio-")) { ArrayList() }.add("${nm(i)} ${day(j)}=${sym(s[i][j])}")
             }
-            emit(byFam, 15)
+            emit(byFam, DETAIL_CAP)
         }
 
         if (out.isEmpty()) out.add("[D] 違反詳細: 制約違反はありません")
