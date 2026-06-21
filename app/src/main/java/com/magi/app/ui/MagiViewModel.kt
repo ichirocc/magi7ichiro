@@ -284,6 +284,30 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun load(json: String) = loadAsync(json)
 
+    /**
+     * [⛏6] ゼロから作る起点。最小の有効データ(1シフト/1グループ/1スタッフ/31日)を
+     * 既存の load() 経路(StateParser→validate→Problem→makeUi)にそのまま流す。サンプル
+     * (assets/sample_state_v6.json)と同じ構造を最小化したものなので、専用の初期化ロジックを
+     * 持たず実行時の不整合リスクを抑える。読み込み後はユーザーが編集タブ(年次マスター)で
+     * シフト/グループ/スタッフを一括追加して育てる想定。
+     */
+    fun initBlankState() {
+        val days = 31
+        val sched = (0 until days).joinToString(",") { "0" }
+        val seed = """
+            {"startDate":"2026-01-01","endDate":"2026-01-31",
+            "shifts":[{"name":"休み","kigou":"休","need1":"","need2":""}],
+            "groups":[{"name":"グループA","kigou":"A"}],
+            "staff":[{"name":"職員1","groupIdx":0}],
+            "use2Patterns":true,
+            "groupShift":[[1]],"groupShiftApt":[[""]],
+            "cons1":[],"cons2":[],"cons3":[],"cons3n":[],"cons3m":[],"cons3mn":[],"cons41":[],"cons42":[],
+            "wishes":{},"staffRange":{},"needDay1":{},"needDay2":{},
+            "schedule":[[$sched]]}
+        """.trimIndent()
+        load(seed)
+    }
+
     fun loadAsync(rawJson: String) {
         val json = MojibakeRepair.repair(rawJson)
         val repaired = json !== rawJson

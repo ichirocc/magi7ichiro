@@ -283,7 +283,9 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
         ) {
             Spacer(Modifier.height(4.dp))
             if (!ui.loaded && tab != 4) {
-                EmptyStateCard(onOpen = openJson, onSample = loadSample)
+                // [⛏6] 「新規に作る」→ 最小データで開始し、編集タブ(年次マスター)へ誘導。
+                //   そこで E6 の折りたたみ節＋⛏12 の一括追加でシフト/グループ/スタッフを育てる。
+                EmptyStateCard(onOpen = openJson, onSample = loadSample, onNew = { vm.initBlankState(); tab = 2; editScope = 1 })
             } else when (tab) {
                 0 -> {
                     InterruptedBanner(ui, onRerun = { vm.runV6FullOptimize() }, onDismiss = { vm.dismissInterrupted() })
@@ -632,7 +634,7 @@ internal fun InterruptedBanner(ui: UiState, onRerun: () -> Unit, onDismiss: () -
 
 
 @Composable
-internal fun EmptyStateCard(onOpen: () -> Unit, onSample: () -> Unit) {
+internal fun EmptyStateCard(onOpen: () -> Unit, onSample: () -> Unit, onNew: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large) {
         Column(
             Modifier.fillMaxWidth().padding(24.dp),
@@ -641,13 +643,17 @@ internal fun EmptyStateCard(onOpen: () -> Unit, onSample: () -> Unit) {
         ) {
             Icon(Icons.Filled.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
             Text("勤務表データを開きましょう", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text("保存済みのデータを開くか、サンプルから始められます。",
+            Text("保存済みのデータを開く、サンプルから始める、または空から新しく作れます。",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                 Text("データを開く", style = MaterialTheme.typography.labelLarge)
             }
             OutlinedButton(onClick = onSample, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                 Text("サンプルで試す", style = MaterialTheme.typography.labelLarge)
+            }
+            // [⛏6] ゼロから作る起点。最小データで開始し、編集タブ(年次マスター)へ誘導する。
+            OutlinedButton(onClick = onNew, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("新規に作る（空から）", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
