@@ -184,7 +184,13 @@ object V6NativeOptimizer {
         val totalIters = results.sumOf { it.iterations }
         val mode = if (winner.get() >= 0) "合格で早期キャンセル" else "時間内最良採用"
         val extra = MirrorLog(tag = "MultiWorker", message = "仮説 ${w} 本 ($mode・役割分担:探索/精製＋受理SA/GreatDeluge多様化) → 採用 HARD=${best.report.hard} total=${best.report.total} 合計iter=${totalIters}")
-        best.copy(phaseLogs = best.phaseLogs + extra, iterations = totalIters)
+        // [過程検証] 各仮説の個別結果・多様性（相異なる解の数）・保持した他の案数をログ化し、探索過程を後から検証できるようにする。
+        //   各仮説の合計が揃っていれば収束、ばらけていれば多様な探索ができている、と判別できる。
+        val perHyp = results.sortedWith(compareBy({ it.report.hard }, { it.report.total }))
+            .joinToString("  ") { r -> "[必須${r.report.hard}/合計${r.report.total}${if (r === best) "★採用" else ""}]" }
+        val distinctSols = results.map { r -> r.schedule.joinToString("|") { row -> row.joinToString(",") } }.distinct().size
+        val verifyLog = MirrorLog(tag = "仮説検証", message = "各仮説 ${results.size} 本の結果: $perHyp / 相異なる解=${distinctSols}件 / 他の案として保持=${lastAlternatives.size}件")
+        best.copy(phaseLogs = best.phaseLogs + extra + verifyLog, iterations = totalIters)
     }
 
     /** Roulette-wheel operator selection for the adaptive LNS. */
