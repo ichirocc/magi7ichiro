@@ -1148,6 +1148,19 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun groupKigouList(): List<String> = state?.groups?.map { it.kigou } ?: emptyList()
 
+    /** [冗長除去/データ密度] 1日人数の上下限 [l〜u] を意味で圧縮して短く表す。見出しが「人数(上下限)」の
+     *  文脈を担うので、行は記号のみで足りる。l==u=ちょうどN / 下限のみ=N以上 / 上限のみ=N以下 / 両方=l〜u。 */
+    private fun boundLabel(l: String, u: String): String {
+        val lo = l.ifBlank { null }; val hi = u.ifBlank { null }
+        return when {
+            lo != null && hi != null && lo == hi -> "ちょうど$lo"
+            lo != null && hi != null -> "$lo〜$hi"
+            lo != null -> "$lo 以上"
+            hi != null -> "$hi 以下"
+            else -> "制限なし"
+        }
+    }
+
     fun constraintFamilies(): List<ConstraintFamilyView> {
         val st = state ?: return emptyList()
         fun seq(p: List<String>) = p.filter { it.isNotBlank() }.joinToString(" -> ").ifEmpty { "(空)" }
@@ -1160,10 +1173,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             ConstraintFamilyView("cons3n", "禁止の並び", st.cons3n.map { seq(it.pattern) }),
             ConstraintFamilyView("cons3m", "推奨の並び", st.cons3m.map { seq(it.pattern) }),
             ConstraintFamilyView("cons3mn", "回避の並び", st.cons3mn.map { seq(it.pattern) }),
-            ConstraintFamilyView("cons41", "グループ別の1日の人数（上下限）",
-                st.cons41.map { "グループ ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 人/1日" }),
-            ConstraintFamilyView("cons42", "グループの組み合わせ禁止",
-                st.cons42.map { "グループ ${it.g1Kigou} の ${it.s1Kigou} と グループ ${it.g2Kigou} の ${it.s2Kigou} は同じ日に不可" }),
+            ConstraintFamilyView("cons41", "グループ別の1日の人数（群・シフト → 人数）",
+                st.cons41.map { "${it.groupKigou}・${it.shiftKigou}   ${boundLabel(it.l, it.u)}" }),
+            ConstraintFamilyView("cons42", "グループの組み合わせ禁止（同じ日に不可）",
+                st.cons42.map { "${it.g1Kigou}・${it.s1Kigou}  ✕  ${it.g2Kigou}・${it.s2Kigou}" }),
         )
     }
 
@@ -1171,10 +1184,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun skillConstraintFamilies(): List<ConstraintFamilyView> {
         val st = state ?: return emptyList()
         return listOf(
-            ConstraintFamilyView("cons41s", "スキル別の1日の人数（上下限）",
-                st.cons41s.map { "スキル ${it.groupKigou} の ${it.shiftKigou} を [${it.l.ifBlank { "-" }} 〜 ${it.u.ifBlank { "-" }}] 人/1日" }),
-            ConstraintFamilyView("cons42s", "スキルの組み合わせ禁止",
-                st.cons42s.map { "スキル ${it.g1Kigou} の ${it.s1Kigou} と スキル ${it.g2Kigou} の ${it.s2Kigou} は同じ日に不可" }),
+            ConstraintFamilyView("cons41s", "スキル別の1日の人数（スキル・シフト → 人数）",
+                st.cons41s.map { "${it.groupKigou}・${it.shiftKigou}   ${boundLabel(it.l, it.u)}" }),
+            ConstraintFamilyView("cons42s", "スキルの組み合わせ禁止（同じ日に不可）",
+                st.cons42s.map { "${it.g1Kigou}・${it.s1Kigou}  ✕  ${it.g2Kigou}・${it.s2Kigou}" }),
         )
     }
 
