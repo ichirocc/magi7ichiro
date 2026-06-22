@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 95
-        versionName = "2.89.0-tally-cell-fix-focus"
+        versionCode = 96
+        versionName = "2.90.0-csv-utf8-bom"
     }
 
     buildTypes {

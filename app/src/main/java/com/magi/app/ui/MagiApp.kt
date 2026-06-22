@@ -199,7 +199,12 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                 if (csv != null) {
                     withContext(Dispatchers.IO) {
                         runCatching {
-                            ctx.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+                            ctx.contentResolver.openOutputStream(uri)?.use {
+                                // UTF-8 BOM を付与。日本の Excel は BOM 無し UTF-8 を CP932 と誤読し文字化けするため、
+                                // BOM(EF BB BF) を先頭に書いて Unicode(UTF-8) と認識させる。取込側は removePrefix で BOM 除去済。
+                                it.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                                it.write(csv.toByteArray(Charsets.UTF_8))
+                            }
                         }
                     }
                 }
