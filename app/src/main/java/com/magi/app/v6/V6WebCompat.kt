@@ -200,11 +200,35 @@ object V6WebCompat {
         return "work"
     }
 
-    fun resolveShiftColor(symbol: String, name: String = "", explicit: String? = null): String {
+    // [判別性パレット] 似たカテゴリのシフトが同色に潰れないよう、休(rest)以外はシフトの並び順(index)で
+    //   色相を十分に離した既定色を割り当てる。隣接シフトのコントラストを保つため暖色/寒色を交互配置。
+    private val SHIFT_WORK_PALETTE = listOf(
+        "#E59B96", // coral
+        "#74BEB0", // teal
+        "#E0B968", // amber
+        "#93A9E0", // periwinkle
+        "#A6C77E", // lime
+        "#D7A0D0", // orchid
+        "#84C4DC", // sky
+        "#E0A0B4", // rose
+        "#7FC59B", // mint
+        "#B79CE0", // lavender
+        "#CFC56A", // gold
+        "#C2A98A", // taupe
+        "#BBC58A", // olive
+        "#E0B0A0", // peach
+        "#9AC0C8", // dusty cyan
+        "#C8A0C0", // mauve
+    )
+
+    fun resolveShiftColor(symbol: String, name: String = "", explicit: String? = null, index: Int = -1): String {
         if (!explicit.isNullOrBlank()) return explicit
-        // [Daily-Planner テイスト] 温かいクリーム地になじむ、やわらかいパステル既定色（判別性は維持）。
+        // 休(rest)は常に落ち着いたスレート（休みであることを一目で）。
+        if (shiftCatDefault(symbol, name) == "rest") return "#A7B4C2"
+        // それ以外はシフトの並び順で判別性の高い色を割り当て（同カテゴリの色潰れを防ぐ）。
+        if (index >= 0) return SHIFT_WORK_PALETTE[index % SHIFT_WORK_PALETTE.size]
+        // index 未指定（後方互換）: 旧カテゴリ別の既定色。
         return when (shiftCatDefault(symbol, name)) {
-            "rest" -> "#A7B4C2"   // 休: 落ち着いたスレート
             "night" -> "#B79CE0"  // 夜: ダスティ・ラベンダー
             "early" -> "#74BEB0"  // 早: やわらかいティール
             "late" -> "#E0B968"   // 遅: 穏やかなアンバー
