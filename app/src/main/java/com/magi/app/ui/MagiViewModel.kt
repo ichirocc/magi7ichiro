@@ -1898,6 +1898,26 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 取込種別を取り違えた可能性の判定: 勤務表(スケジュール)CSVらしいか。 */
+    private fun looksLikeScheduleCsv(t: String): Boolean {
+        val lines = t.split('\n')
+        if (lines.isEmpty()) return false
+        // ScheduleCsvBridge.build のヘッダ「スタッフ \ 日付,…」、または集計ブロック「集計,…」。
+        val head = lines[0].trim()
+        if (head.startsWith("スタッフ") && head.contains("日付")) return true
+        return lines.any { it.trimStart().startsWith("集計,") }
+    }
+
+    /** 希望/制約の取込が0件のとき、別形式CSVの取り違えを推定して利用者向けヒントを返す（無ければ空）。 */
+    private fun componentImportMismatchHint(repairedText: String): String = when {
+        com.magi.app.v6.RosterCsvImport.detect(repairedText) ||
+            com.magi.app.v6.FlatRosterCsvImport.detect(repairedText) ->
+            "これは勤務表全体（テンプレ/ユニット列形式）のCSVのようです。取込種別で『データ全体（新規）』を選んでください。"
+        looksLikeScheduleCsv(repairedText) ->
+            "これは勤務表（スケジュール）CSVのようで、希望・制約は含まれていません。専用CSVを、出力タブの『希望』『制約』ボタンで出して取り込んでください。"
+        else -> ""
+    }
+
     /** [コンポーネント別取込] スタッフ一覧CSV（氏名,グループ,スキル）。氏名一致で所属群/スキルのみ更新（追加/削除なし）。 */
     fun importStaffCsv(rawText: String) {
         val st = state ?: run { _ui.value = _ui.value.copy(message = "先にデータを開いてください（スタッフ一覧は既存データに重ねます）"); return }
@@ -1919,8 +1939,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val text = MojibakeRepair.repair(rawText)
         val res = runCatching { com.magi.app.v6.WishesCsvIO.parse(text, st) }.getOrNull()
         if (res == null) {
-            _ui.value = _ui.value.copy(message = "希望シフトの取込失敗: 取り込める行がありません。形式『氏名,日,希望シフト』と、氏名・シフト記号が一致しているかご確認ください。")
-            logOp("W", "希望シフトCSV取込 失敗: 0件")
+            val hint = componentImportMismatchHint(text)
+            val tail = if (hint.isEmpty()) "形式は『氏名,日,希望シフト』（例: 古泉 健一,5,休）です。氏名・シフト記号が一致しているかご確認ください。" else hint
+            _ui.value = _ui.value.copy(message = "希望シフトの取込失敗（取り込める行が0件）。$tail")
+            logOp("W", "希望シフトCSV取込 失敗: 0件${if (hint.isEmpty()) "" else "（別形式CSVの取り違えの可能性）"}")
             return
         }
         val (ns, count) = res
@@ -1934,8 +1956,10 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val text = MojibakeRepair.repair(rawText)
         val res = runCatching { com.magi.app.v6.ConstraintsCsvIO.parse(text, st) }.getOrNull()
         if (res == null) {
-            _ui.value = _ui.value.copy(message = "各制約の取込失敗: 取り込める行がありません。1列目の種別（連勤/禁止連続/群組合せ禁止/個人レンジ 等）をご確認ください。")
-            logOp("W", "各制約CSV取込 失敗: 0件")
+            val hint = componentImportMismatchHint(text)
+            val tail = if (hint.isEmpty()) "1列目の種別（連勤/禁止連続/群組合せ禁止/個人レンジ 等）をご確認ください。例: 連勤,5,休,14 ／ 個人レンジ,古泉 健一,A4,6,8" else hint
+            _ui.value = _ui.value.copy(message = "各制約の取込失敗（取り込める行が0件）。$tail")
+            logOp("W", "各制約CSV取込 失敗: 0件${if (hint.isEmpty()) "" else "（別形式CSVの取り違えの可能性）"}")
             return
         }
         val (ns, count) = res
