@@ -122,9 +122,14 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     /** 操作ログに1件追記し、UIへ反映（新しい順、最大300件）。 */
     private fun logOp(level: String, message: String) {
         opLog.addFirst(OpLogEntry(System.currentTimeMillis(), level, message))
-        while (opLog.size > 300) opLog.removeLast()
+        while (opLog.size > 1000) opLog.removeLast()
         _ui.value = _ui.value.copy(opLog = opLog.map { "${opLogFmt.format(java.util.Date(it.timeMs))} [${it.level}] ${it.message}" })
     }
+
+    // 操作再現用デコード（現stateを参照。staff/shift一覧は操作中に不変）。
+    private fun opNm(i: Int): String = state?.staff?.getOrNull(i)?.name ?: "#$i"
+    private fun opSy(k: Int): String = state?.shifts?.getOrNull(k)?.kigou ?: "#$k"
+    private fun opDays(days: List<Int>): String = if (days.size <= 10) days.joinToString(",") { "${it + 1}日" } else "${days.size}日分"
 
     init {
         // 起動時: 前回の自動保存があれば復元（無ければ何もしない）
@@ -432,11 +437,11 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    fun setWorkers(n: Int) { _ui.value = _ui.value.copy(workers = n.coerceIn(1, 16)) }
+    fun setWorkers(n: Int) { val v = n.coerceIn(1, 16); _ui.value = _ui.value.copy(workers = v); logOp("I", "設定変更: 並列数 → $v") }
     // タイムアウト上限は5分(300s)。エンジンは budgetMs を全フェーズで厳守し、超過しない（停滞時はさらに早期終了）。
-    fun setBudget(sec: Int) { _ui.value = _ui.value.copy(budgetSec = sec.coerceIn(10, MAX_BUDGET_SEC)) }
-    fun setSoftPolish(b: Boolean) { _ui.value = _ui.value.copy(softPolish = b) }
-    fun setV6Algorithm(a: V6Algorithm) { _ui.value = _ui.value.copy(v6Algorithm = a) }
+    fun setBudget(sec: Int) { val v = sec.coerceIn(10, MAX_BUDGET_SEC); _ui.value = _ui.value.copy(budgetSec = v); logOp("I", "設定変更: 予算 → ${v}秒") }
+    fun setSoftPolish(b: Boolean) { _ui.value = _ui.value.copy(softPolish = b); logOp("I", "設定変更: ソフト研磨 → ${if (b) "ON" else "OFF"}") }
+    fun setV6Algorithm(a: V6Algorithm) { _ui.value = _ui.value.copy(v6Algorithm = a); logOp("I", "設定変更: 方式 → $a") }
 
     fun refreshCheck() {
         val st = state ?: return
@@ -843,6 +848,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             schedule = sched.map { it.toList() },
             message = "${st.staff.getOrNull(i)?.name ?: i} / ${j + 1}日 を ${st.shifts.getOrNull(shift)?.kigou ?: shift} に変更",
         )
+        logOp("I", "編集: ${opNm(i)} ${j + 1}日 → ${opSy(shift)}")
         refreshCheck()
     }
 
@@ -868,6 +874,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             schedule = sched.map { it.toList() },
             message = "${changed}マスを ${st.shifts.getOrNull(shift)?.kigou ?: shift} に一括変更",
         )
+        logOp("I", "一括編集: ${changed}マス → ${opSy(shift)}")
         refreshCheck()
     }
 
@@ -914,6 +921,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             schedule = sched.map { it.toList() },
             message = "${st.staff.getOrNull(i)?.name ?: i} / ${j + 1}日 を ${st.shifts.getOrNull(next)?.kigou ?: next} に変更",
         )
+        logOp("I", "編集: ${opNm(i)} ${j + 1}日 → ${opSy(next)}")
         refreshCheck()
     }
 
@@ -981,13 +989,14 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val nd2 = st.needDay2.toMutableMap()
         if (p1.isBlank()) nd1.remove(key) else nd1[key] = p1.trim()
         if (p2.isBlank()) nd2.remove(key) else nd2[key] = p2.trim()
+        logOp("I", "需要設定: ${opSy(k)} ${j + 1}日 → P1=${p1.ifBlank { "-" }} P2=${p2.ifBlank { "-" }}")
         applyStructure(st.copy(needDay1 = nd1, needDay2 = nd2))
     }
 
     fun removeNeedDay(k: Int, j: Int) {
         val st = state ?: return
         val key = "$k,$j"
-        applyStructure(st.copy(needDay1 = st.needDay1 - key, needDay2 = st.needDay2 - key))
+        logOp("I", "需要削除: ${opSy(k)} ${j + 1}日"); applyStructure(st.copy(needDay1 = st.needDay1 - key, needDay2 = st.needDay2 - key))
     }
 
     // ---- ws5: 個人別の回数（LimMin/LimMax） staffRange["i,k"]=Range(lo,hi) を編集 ----
@@ -1009,12 +1018,13 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val key = "$i,$k"
         val m = st.staffRange.toMutableMap()
         if (lo.isBlank() && hi.isBlank()) m.remove(key) else m[key] = Range(lo.trim(), hi.trim())
+        logOp("I", "個人レンジ: ${opNm(i)} ${opSy(k)} → ${if (lo.isBlank() && hi.isBlank()) "削除" else "${lo.ifBlank { "?" }}〜${hi.ifBlank { "?" }}"}")
         applyStructure(st.copy(staffRange = m))
     }
 
     fun removeStaffRange(i: Int, k: Int) {
         val st = state ?: return
-        applyStructure(st.copy(staffRange = st.staffRange - "$i,$k"))
+        logOp("I", "個人レンジ削除: ${opNm(i)} ${opSy(k)}"); applyStructure(st.copy(staffRange = st.staffRange - "$i,$k"))
     }
 
     /** [直せる導線] 集計セル(職員別)の違反詳細用しきい値: 下限/上限(staffRange)・目標(apt実効)。未設定は null。 */
@@ -1135,11 +1145,13 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val st = state ?: return
         val m = st.wishes.toMutableMap()
         m["$i,$j"] = k
+        logOp("I", "希望設定: ${opNm(i)} ${j + 1}日 → ${opSy(k)}")
         applyStructure(st.copy(wishes = m))
     }
 
     fun removeWish(i: Int, j: Int) {
         val st = state ?: return
+        logOp("I", "希望削除: ${opNm(i)} ${j + 1}日")
         applyStructure(st.copy(wishes = st.wishes - "$i,$j"))
     }
 
@@ -1150,6 +1162,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val m = st.wishes.toMutableMap()
         val staffRange = if (staffIdx != null) listOf(staffIdx) else st.staff.indices.toList()
         for (i in staffRange) for (j in days) if (i in st.staff.indices && j in 0 until st.dayCount) m["$i,$j"] = k
+        logOp("I", "希望一括: ${if (staffIdx != null) opNm(staffIdx) else "全員"} ${opDays(days)} → ${opSy(k)}")
         applyStructure(st.copy(wishes = m))
     }
 
@@ -1161,6 +1174,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val staffRange = if (staffIdx != null) listOf(staffIdx) else st.staff.indices.toList()
         for (i in staffRange) for (j in days) m.remove("$i,$j")
         if (m.size == st.wishes.size) return
+        logOp("I", "希望クリア: ${if (staffIdx != null) opNm(staffIdx) else "全員"} ${opDays(days)}")
         applyStructure(st.copy(wishes = m))
     }
 
@@ -1168,6 +1182,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAllWishes() {
         val st = state ?: return
         if (st.wishes.isEmpty()) return
+        logOp("I", "希望全クリア")
         applyStructure(st.copy(wishes = emptyMap()))
     }
 
@@ -1251,26 +1266,26 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun skillGroupKigouList(): List<String> = state?.skillGroups?.map { it.kigou } ?: emptyList()
     fun addCons41s(groupKigou: String, shiftKigou: String, l: String, u: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons41s = st.cons41s + C41Row(groupKigou, shiftKigou, l.trim(), u.trim())))
+        logOp("I", "制約追加(スキル群回数): $groupKigou $shiftKigou ${l.trim()}〜${u.trim()}"); mutateConstraints(st.copy(cons41s = st.cons41s + C41Row(groupKigou, shiftKigou, l.trim(), u.trim())))
     }
     fun addCons42s(g1: String, g2: String, s1: String, s2: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons42s = st.cons42s + C42Row(g1, g2, s1, s2)))
+        logOp("I", "制約追加(スキル群組合せ禁止): ${g1}${s1} & ${g2}${s2}"); mutateConstraints(st.copy(cons42s = st.cons42s + C42Row(g1, g2, s1, s2)))
     }
 
     fun addCons1(day1: String, shiftKigou: String, day2: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons1 = st.cons1 + C1Row(day1.trim(), shiftKigou, day2.trim())))
+        logOp("I", "制約追加(連勤/休): ${day1.trim()}日に${shiftKigou}${day2.trim()}回以上"); mutateConstraints(st.copy(cons1 = st.cons1 + C1Row(day1.trim(), shiftKigou, day2.trim())))
     }
 
     fun addCons2(shiftKigou: String, count: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons2 = st.cons2 + C2Row(shiftKigou, count.trim())))
+        logOp("I", "制約追加(cons2): $shiftKigou ${count.trim()}"); mutateConstraints(st.copy(cons2 = st.cons2 + C2Row(shiftKigou, count.trim())))
     }
 
     fun addCons41(groupKigou: String, shiftKigou: String, l: String, u: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons41 = st.cons41 + C41Row(groupKigou, shiftKigou, l.trim(), u.trim())))
+        logOp("I", "制約追加(群回数): $groupKigou $shiftKigou ${l.trim()}〜${u.trim()}"); mutateConstraints(st.copy(cons41 = st.cons41 + C41Row(groupKigou, shiftKigou, l.trim(), u.trim())))
     }
 
     /** [回数設定UI] (群,シフト) を一意キーに cons41 を更新-or-追加。l/u 両方空なら削除。重複行は1本に集約。 */
@@ -1279,12 +1294,13 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val ll = l.trim(); val uu = u.trim()
         val rest = st.cons41.filterNot { it.groupKigou == groupKigou && it.shiftKigou == shiftKigou }
         val next = if (ll.isBlank() && uu.isBlank()) rest else rest + C41Row(groupKigou, shiftKigou, ll, uu)
+        logOp("I", "制約更新(群回数): $groupKigou $shiftKigou → ${if (ll.isBlank() && uu.isBlank()) "削除" else "${ll.ifBlank { "?" }}〜${uu.ifBlank { "?" }}"}")
         mutateConstraints(st.copy(cons41 = next))
     }
 
     fun addCons42(g1: String, g2: String, s1: String, s2: String) {
         val st = state ?: return
-        mutateConstraints(st.copy(cons42 = st.cons42 + C42Row(g1, g2, s1, s2)))
+        logOp("I", "制約追加(群組合せ禁止): ${g1}${s1} & ${g2}${s2}"); mutateConstraints(st.copy(cons42 = st.cons42 + C42Row(g1, g2, s1, s2)))
     }
 
     fun addCons3(family: String, pattern: List<String>) {
@@ -1293,6 +1309,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         // first blank, max 5 days), not by removing all blanks. Match that here.
         val pat = pattern.map { it.trim() }.takeWhile { it.isNotEmpty() }.take(5)
         if (pat.isEmpty()) return
+        logOp("I", "制約追加($family): ${pat.joinToString("→")}")
         mutateConstraints(
             when (family) {
                 "cons3" -> st.copy(cons3 = st.cons3 + C3Row(pat))
@@ -1306,6 +1323,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeConstraint(family: String, index: Int) {
         val st = state ?: return
+        logOp("I", "制約削除: $family[$index]")
         fun <T> List<T>.without(i: Int) = filterIndexed { idx, _ -> idx != i }
         mutateConstraints(
             when (family) {
@@ -1525,7 +1543,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         val st = state ?: return
         val sched = currentSchedule ?: return
         val first = runCatching { java.time.LocalDate.of(year, month1to12, 1) }.getOrNull() ?: return
-        applyStructure(Ws1Ops.resizeDays(st.copy(startDate = first.toString()), sched, first.lengthOfMonth()))
+        logOp("I", "期間変更: ${year}年${month1to12}月"); applyStructure(Ws1Ops.resizeDays(st.copy(startDate = first.toString()), sched, first.lengthOfMonth()))
     }
 
     /** 現在の開始日から相対的に月を移動（-1=前月 / +1=翌月）。開始日が不明なら端末の今月を起点。 */
@@ -1546,21 +1564,21 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun skillGroups(): List<Group> = state?.skillGroups ?: emptyList()
     fun addSkillGroup(name: String, kigou: String) {
         val st = state ?: return; if (kigou.isBlank()) return
-        applyStructure(st.copy(skillGroups = st.skillGroups + Group(name.trim(), kigou.trim())))
+        logOp("I", "スキル区分追加: ${name.trim()}(${kigou.trim()})"); applyStructure(st.copy(skillGroups = st.skillGroups + Group(name.trim(), kigou.trim())))
     }
     fun editSkillGroup(g: Int, name: String, kigou: String) {
         val st = state ?: return
-        applyStructure(st.copy(skillGroups = st.skillGroups.mapIndexed { i, x -> if (i == g) Group(name.trim(), kigou.trim()) else x }))
+        logOp("I", "スキル区分編集: [$g] → ${name.trim()}(${kigou.trim()})"); applyStructure(st.copy(skillGroups = st.skillGroups.mapIndexed { i, x -> if (i == g) Group(name.trim(), kigou.trim()) else x }))
     }
     fun removeSkillGroup(g: Int) {
         val st = state ?: return
         // 削除した群を参照する職員は 0 へ、後ろの群は1つ詰める。残った cons*s の参照外れは Problem 解決時に無視。
         val newStaff = st.staff.map { s -> val k = s.skillIdx; s.copy(skillIdx = if (k == g) 0 else if (k > g) k - 1 else k) }
-        applyStructure(st.copy(skillGroups = st.skillGroups.filterIndexed { i, _ -> i != g }, staff = newStaff))
+        logOp("I", "スキル区分削除: [$g]"); applyStructure(st.copy(skillGroups = st.skillGroups.filterIndexed { i, _ -> i != g }, staff = newStaff))
     }
     fun setStaffSkill(i: Int, skillIdx: Int) {
         val st = state ?: return
-        applyStructure(st.copy(staff = st.staff.mapIndexed { idx, s -> if (idx == i) s.copy(skillIdx = skillIdx) else s }))
+        logOp("I", "スキル割当: ${opNm(i)} → 区分[$skillIdx]"); applyStructure(st.copy(staff = st.staff.mapIndexed { idx, s -> if (idx == i) s.copy(skillIdx = skillIdx) else s }))
     }
 
     fun ws1CanRemoveGroup(g: Int): Boolean = state?.let { Ws1Ops.canRemoveGroup(it, g) } ?: false

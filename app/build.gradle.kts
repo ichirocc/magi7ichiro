@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 100
-        versionName = "2.94.0-flat-roster-import"
+        versionCode = 101
+        versionName = "2.95.0-operation-log"
     }
 
     buildTypes {
