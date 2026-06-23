@@ -491,6 +491,59 @@ object StaffCsvIO {
         if (matched == 0) return null
         return state.copy(staff = newStaff) to matched
     }
+
+    /** スタッフ一覧 upsert の結果（新規追加分の勤務表行も反映済み）。 */
+    class StaffUpsertResult(val state: MagiState, val schedule: Array<IntArray>, val updated: Int, val added: Int)
+
+    /**
+     * [氏名,グループ,スキル] を upsert で取込: 既存氏名は所属群/スキルを更新、未知の氏名は
+     * 新規スタッフとして追加し勤務表に休(0)の行を1行足す。氏名は空白無視で照合。
+     * 群/スキルは記号(kigou)照合、未知なら新規は群0/スキル0・既存は現状維持。
+     * @return StaffUpsertResult、または null（解析不能/更新0かつ追加0）。
+     */
+    fun parseUpsert(text: String, state: MagiState, sched: Array<IntArray>): StaffUpsertResult? {
+        val rows = parseCsvRows(text)
+        if (rows.size < 2) return null
+        val nameToI = state.staff.indices.associateBy { nameMatchKey(state.staff[it].name) }
+        val gByK = state.groups.indices.associateBy { state.groups[it].kigou.trim() }
+        val skByK = state.skillGroups.indices.associateBy { state.skillGroups[it].kigou.trim() }
+        val newStaff = state.staff.toMutableList()
+        val t = if (sched.isNotEmpty()) sched[0].size else state.dayCount
+        val extraRows = ArrayList<IntArray>()
+        val seenNew = HashMap<String, Int>()
+        var updated = 0
+        var added = 0
+        for (r in rows.drop(1)) {
+            val rawName = r.getOrElse(0) { "" }.trim()
+            if (rawName.isEmpty()) continue
+            val key = nameMatchKey(rawName)
+            val gi = gByK[r.getOrElse(1) { "" }.trim()]
+            val si = skByK[r.getOrElse(2) { "" }.trim()]
+            val existing = nameToI[key]
+            if (existing != null) {
+                val cur = newStaff[existing]
+                newStaff[existing] = cur.copy(groupIdx = gi ?: cur.groupIdx, skillIdx = si ?: cur.skillIdx)
+                updated++
+            } else {
+                val dup = seenNew[key]
+                if (dup != null) {
+                    val cur = newStaff[dup]
+                    newStaff[dup] = cur.copy(groupIdx = gi ?: cur.groupIdx, skillIdx = si ?: cur.skillIdx)
+                } else {
+                    seenNew[key] = newStaff.size
+                    newStaff.add(Staff(rawName, gi ?: 0, si ?: 0))
+                    extraRows.add(IntArray(t) { 0 })
+                    added++
+                }
+            }
+        }
+        if (updated == 0 && added == 0) return null
+        val newSched = Array(sched.size + extraRows.size) { i ->
+            if (i < sched.size) sched[i].copyOf() else extraRows[i - sched.size]
+        }
+        val ns = state.copy(staff = newStaff, schedule = newSched.map { it.toList() })
+        return StaffUpsertResult(ns, newSched, updated, added)
+    }
 }
 
 /** 希望シフト: 「氏名,日,希望シフト」（1希望=1行）。氏名一致で希望を全置換。 */

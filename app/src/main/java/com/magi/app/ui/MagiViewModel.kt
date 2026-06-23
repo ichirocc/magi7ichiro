@@ -1609,6 +1609,29 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         autoSave()
     }
 
+    /** Ws1Result(状態+勤務表)を適用し、再チェック後に独自メッセージを表示（スタッフ新規追加など行数変化を伴う取込）。 */
+    private fun applyStructureWithMessage(r: Ws1Result, doneMessage: String) {
+        pushUndo()
+        state = r.state
+        val sched = r.schedule.copy2D()
+        currentSchedule = sched
+        autoSave()
+        val seq = ++checkSeq
+        checkJob?.cancel()
+        _ui.value = _ui.value.copy(running = true, structureEdited = true, message = "$doneMessage（違反チェック中…）")
+        checkJob = viewModelScope.launch {
+            try {
+                val rep = V6FinalPort.handleCheck(r.state, sched)
+                if (seq != checkSeq) return@launch
+                _ui.value = makeUi(r.state, rep.schedule, rep.report, _ui.value.copy(running = false, message = "$doneMessage｜必須=${rep.report.hard} 合計=${rep.report.total}"))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (seq == checkSeq) _ui.value = _ui.value.copy(running = false, message = "$doneMessage（チェック失敗: ${e.message}）")
+            }
+        }
+    }
+
     fun ws1EditShift(k: Int, name: String, kigou: String, need1: String, need2: String) {
         val st = state ?: return
         applyStructure(Ws1Ops.editShift(st, k, name.trim(), kigou.trim(), need1.trim(), need2.trim()))
@@ -1918,19 +1941,26 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         else -> ""
     }
 
-    /** [コンポーネント別取込] スタッフ一覧CSV（氏名,グループ,スキル）。氏名一致で所属群/スキルのみ更新（追加/削除なし）。 */
+    /** [コンポーネント別取込] スタッフ一覧CSV（氏名,グループ,スキル）。既存は所属群/スキルを更新、未知の氏名は新規追加（勤務表に休の行を追加）。 */
     fun importStaffCsv(rawText: String) {
-        val st = state ?: run { _ui.value = _ui.value.copy(message = "先にデータを開いてください（スタッフ一覧は既存データに重ねます）"); return }
+        val st = state ?: run { _ui.value = _ui.value.copy(message = "先にデータを開いてください（スタッフ一覧は既存データに追加/更新します）"); return }
+        val sched = currentSchedule ?: run { _ui.value = _ui.value.copy(message = "先にデータを開いてください（スタッフ一覧は既存データに追加/更新します）"); return }
         val text = MojibakeRepair.repair(rawText)
-        val res = runCatching { com.magi.app.v6.StaffCsvIO.parse(text, st) }.getOrNull()
+        val res = runCatching { com.magi.app.v6.StaffCsvIO.parseUpsert(text, st, sched) }.getOrNull()
         if (res == null) {
-            _ui.value = _ui.value.copy(message = "スタッフ一覧の取込失敗: 氏名が一致しませんでした。形式『氏名,グループ,スキル』と、氏名が現在のデータと一致しているかご確認ください。")
-            logOp("W", "スタッフ一覧CSV取込 失敗: 一致0件")
+            val hint = componentImportMismatchHint(text)
+            val tail = if (hint.isEmpty()) "形式『氏名,グループ,スキル』（1行=1名）をご確認ください。" else hint
+            _ui.value = _ui.value.copy(message = "スタッフ一覧の取込失敗（追加0・更新0）。$tail")
+            logOp("W", "スタッフ一覧CSV取込 失敗: 0件")
             return
         }
-        val (ns, matched) = res
-        logOp("I", "スタッフ一覧CSV取込: ${matched}名の所属群/スキルを更新")
-        applyStructureWithMessage(ns, "スタッフ一覧を取込: ${matched}名の所属群/スキルを更新")
+        val parts = buildList {
+            if (res.added > 0) add("${res.added}名を新規追加")
+            if (res.updated > 0) add("${res.updated}名を更新")
+        }
+        val msg = "スタッフ一覧を取込: " + parts.joinToString("・")
+        logOp("I", "スタッフ一覧CSV取込: 追加${res.added} 更新${res.updated}")
+        applyStructureWithMessage(com.magi.app.v6.Ws1Result(res.state, res.schedule), msg)
     }
 
     /** [コンポーネント別取込] 希望シフトCSV（氏名,日,希望シフト）。氏名一致で希望を全置換。 */
