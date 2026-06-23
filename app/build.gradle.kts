@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 99
-        versionName = "2.93.0-import-fail-message"
+        versionCode = 100
+        versionName = "2.94.0-flat-roster-import"
     }
 
     buildTypes {

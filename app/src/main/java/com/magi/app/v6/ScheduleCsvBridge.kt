@@ -166,6 +166,140 @@ object RosterCsvImport {
     }
 }
 
+/**
+ * 「ユニット列形式」の勤務表CSVを [MagiState] として取り込む（凡例ブロックなし版）。
+ *
+ * 構成（添付サンプル）:
+ *  - ヘッダ行: 「ユニット,No,役職,氏名,1,2,…,31」（日番号は氏名列の右隣から）
+ *  - 曜日行(任意): 「,,,曜日,水,木,金,…」
+ *  - スタッフ行: 「<ユニット>,<No>,<役職>,<氏名>,<31日分のシフト記号>」
+ *
+ * [RosterCsvImport] との違い: ユニットが「列(idx0)」/ 氏名は見出し「氏名」の列 / 凡例ブロックが無い。
+ * シフト記号は本表セルから収集する。担当可否・apt・制約・需要は無し（全可・空）で取り込み、
+ * 期間は曜日行から推定（不可なら当年1月）。空セルは「休」。利用者が後から調整できる。
+ */
+object FlatRosterCsvImport {
+    private const val REST = "休"
+
+    /** ヘッダ行 idx0=="ユニット" かつ 見出し「氏名」を含むか（軽量判定）。 */
+    fun detect(text: String): Boolean {
+        val rows = parseCsvRows(text)
+        return rows.any { r -> r.isNotEmpty() && r[0].trim() == "ユニット" && r.any { it.trim() == "氏名" } }
+    }
+
+    fun parse(text: String, asWishes: Boolean = false): MagiState? {
+        val rows = parseCsvRows(text)
+        if (rows.isEmpty()) return null
+        fun cell(r: List<String>, i: Int): String = r.getOrElse(i) { "" }.trim()
+        fun normName(s: String): String = s.replace('　', ' ').trim().replace(Regex("\\s+"), " ")
+
+        // ヘッダ行（idx0="ユニット" かつ 見出し「氏名」を含む）と、氏名列・日付開始列を特定。
+        val headerIdx = rows.indexOfFirst { r -> cell(r, 0) == "ユニット" && r.any { it.trim() == "氏名" } }
+        if (headerIdx < 0) return null
+        val header = rows[headerIdx]
+        val nameCol = header.indexOfFirst { it.trim() == "氏名" }
+        if (nameCol < 0) return null
+        val dayCol0 = nameCol + 1
+        // 日数T: ヘッダの dayCol0 以降の連番(1,2,3…)の長さ。無ければ最大列数から推定。
+        var T = 0
+        while (dayCol0 + T < header.size && cell(header, dayCol0 + T).toIntOrNull() == T + 1) T++
+        if (T < 1) T = (rows.maxOf { it.size } - dayCol0).coerceAtLeast(1)
+
+        // 曜日行（任意）: ヘッダ直後で氏名列が「曜日」。
+        val youbiRow = rows.getOrNull(headerIdx + 1)?.takeIf { cell(it, nameCol) == "曜日" }
+
+        // スタッフ行を収集（ユニット空欄なら直前を継承＝Excel結合セル対策）。
+        val staffRows = ArrayList<Triple<String, String, List<String>>>()
+        val symSet = LinkedHashSet<String>()
+        var lastUnit = ""
+        for (rr in (headerIdx + 1) until rows.size) {
+            val r = rows[rr]
+            val u = cell(r, 0)
+            if (u.isNotEmpty()) lastUnit = u
+            val name = normName(cell(r, nameCol))
+            if (name.isEmpty() || name == "氏名" || name == "曜日") continue
+            if (lastUnit.isEmpty()) continue
+            val shifts = (0 until T).map { cell(r, dayCol0 + it) }
+            staffRows.add(Triple(lastUnit, name, shifts))
+            for (s in shifts) if (s.isNotEmpty()) symSet.add(s)
+        }
+        if (staffRows.isEmpty()) return null
+
+        // シフト一覧（本表セルから収集、休を先頭）。
+        val symbols = ArrayList<String>()
+        symbols.add(REST)
+        for (s in symSet) if (s != REST) symbols.add(s)
+        val symToK = LinkedHashMap<String, Int>()
+        symbols.forEachIndexed { i, s -> symToK[s] = i }
+        val shiftsOut = symbols.map { Shift(name = it, kigou = it, need1 = "", need2 = "") }
+        val restK = symToK.getValue(REST)
+
+        // ユニット→グループ（出現順）。
+        val groupOrder = LinkedHashMap<String, Int>()
+        for (row in staffRows) groupOrder.getOrPut(row.first) { groupOrder.size }
+        val groupsOut = groupOrder.keys.map { Group(name = it, kigou = it) }
+
+        // スタッフ・勤務表グリッド。
+        val staffOut = ArrayList<Staff>()
+        val grid = ArrayList<IntArray>()
+        val wishes = LinkedHashMap<String, Int>()
+        for ((i, row) in staffRows.withIndex()) {
+            val g = groupOrder.getValue(row.first)
+            staffOut.add(Staff(name = row.second, groupIdx = g))
+            val days = IntArray(T) { restK }
+            for (j in 0 until T) {
+                val sym = row.third[j]
+                val k = if (sym.isEmpty()) null else symToK[sym]
+                if (k != null) {
+                    days[j] = k
+                    if (asWishes) wishes["$i,$j"] = k
+                }
+            }
+            grid.add(if (asWishes) IntArray(T) { restK } else days)
+        }
+
+        // 期間: 曜日行の1日目の曜日から、当年で「1日がその曜日かつT日以上ある月」を推定。不可なら当年1月。
+        val yr = LocalDate.now().year
+        val dow = youbiRow?.let { cell(it, dayCol0) }?.let {
+            mapOf("月" to 1, "火" to 2, "水" to 3, "木" to 4, "金" to 5, "土" to 6, "日" to 7)[it]
+        }
+        var mo = 1
+        if (dow != null) {
+            for (m in 1..12) {
+                val d = LocalDate.of(yr, m, 1)
+                if (d.dayOfWeek.value == dow && d.lengthOfMonth() >= T) { mo = m; break }
+            }
+        }
+        val start = String.format("%04d-%02d-01", yr, mo)
+        val end = runCatching { LocalDate.parse(start).plusDays((T - 1).toLong()).toString() }.getOrDefault(start)
+
+        val K = shiftsOut.size
+        return MagiState(
+            startDate = start,
+            endDate = end,
+            shifts = shiftsOut,
+            groups = groupsOut,
+            staff = staffOut,
+            use2Patterns = false,
+            groupShift = List(groupsOut.size) { List(K) { 1 } },
+            groupShiftApt = List(groupsOut.size) { List(K) { "" } },
+            schedule = grid.map { it.toList() },
+            wishes = wishes,
+            staffRange = emptyMap(),
+            needDay1 = emptyMap(),
+            needDay2 = emptyMap(),
+            cons1 = emptyList(),
+            cons2 = emptyList(),
+            cons3 = emptyList(),
+            cons3n = emptyList(),
+            cons3m = emptyList(),
+            cons3mn = emptyList(),
+            cons41 = emptyList(),
+            cons42 = emptyList(),
+        )
+    }
+}
+
 object ScheduleCsvBridge {
     fun build(state: MagiState, schedule: Array<IntArray>): String {
         val p = Problem(state)

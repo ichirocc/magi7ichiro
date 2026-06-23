@@ -1653,6 +1653,18 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             }
             // テンプレらしいが解析不能 → 既存取込にフォールバック（または案内）。
         }
+        // ユニット列形式（凡例なし: ユニット,No,役職,氏名,1,2,…）の勤務表CSV → 新規データセットとして取込。
+        if (com.magi.app.v6.FlatRosterCsvImport.detect(text)) {
+            val st = runCatching { com.magi.app.v6.FlatRosterCsvImport.parse(text) }.getOrNull()
+            if (st != null) {
+                logOp("I", "勤務表CSV(ユニット列形式)を新規取込: ${st.staffCount}名 / ${st.dayCount}日 / ${st.shiftCount}シフト / ${st.groupCount}ユニット")
+                load(StateParser.serialize(st, st.schedule.toIntArray2D()))
+                return
+            }
+            _ui.value = _ui.value.copy(message = "CSV取込失敗: ユニット列形式と判定しましたが解析できませんでした。ヘッダ行（ユニット, No, 役職, 氏名, 1, 2, …）と氏名列をご確認ください。")
+            logOp("W", "勤務表CSV(ユニット列形式)取込 失敗: 解析不能")
+            return
+        }
         if (state == null) {
             _ui.value = _ui.value.copy(message = "このCSVを読み込めませんでした。先に『データを開く』で基本データを読み込むか、勤務表テンプレCSVをご利用ください。")
             return
