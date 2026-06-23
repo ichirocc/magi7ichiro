@@ -405,7 +405,10 @@ private fun csvEscapeCell(value: String): String {
     return if (mustQuote) "\"$escaped\"" else escaped
 }
 
-private fun parseCsvRows(text: String): List<List<String>> {
+private fun parseCsvRows(raw: String): List<List<String>> {
+    // UTF-8 BOM(U+FEFF) 除去: 付いていると先頭セルが "\uFEFFユニット" 等になり、trim()でも消えず
+    //   ヘッダ判定(== "ユニット" 等)が失敗して取り込めなくなる。Excel/UTF-8出力由来で頻出。
+    val text = if (raw.isNotEmpty() && raw[0] == '\uFEFF') raw.substring(1) else raw
     val rows = ArrayList<List<String>>()
     val row = ArrayList<String>()
     val cell = StringBuilder()

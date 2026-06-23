@@ -16,16 +16,18 @@ package com.magi.app.model
 object MojibakeRepair {
     fun repair(s: String): String {
         if (s.isEmpty()) return s
-        if (s.any { it.code > 0xFF }) return s                 // 本物の日本語等が既にある
-        if (s.none { it.code in 0x80..0xFF }) return s         // ASCII のみ
+        // 先頭 UTF-8 BOM(U+FEFF) は常に除去（trim()でも消えず、ヘッダ判定や contains を壊すため）。
+        val t = if (s[0] == '\uFEFF') s.substring(1) else s
+        if (t.any { it.code > 0xFF }) return t                 // 本物の日本語等が既にある
+        if (t.none { it.code in 0x80..0xFF }) return t         // ASCII のみ
         return try {
-            val decoded = String(s.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
-            val before = s.count { it == '�' }
+            val decoded = String(t.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+            val before = t.count { it == '�' }
             val after = decoded.count { it == '�' }
             // 置換文字が増えない かつ 実際に多バイト文字へ復元できた場合のみ採用
-            if (after <= before && decoded.any { it.code > 0xFF }) decoded else s
+            if (after <= before && decoded.any { it.code > 0xFF }) decoded else t
         } catch (_: Exception) {
-            s
+            t
         }
     }
 
