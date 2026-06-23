@@ -60,7 +60,6 @@ fun Ws1Card(ui: UiState, vm: MagiViewModel) {
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Text("基本情報（スタッフ・シフト・グループ）", style = MaterialTheme.typography.titleMedium)
             Text("変更すると表を作り直し、すぐ問題がないか調べ直します。", fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.primary)
 

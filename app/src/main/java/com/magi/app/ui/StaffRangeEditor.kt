@@ -52,7 +52,6 @@ fun StaffRangeCard(ui: UiState, vm: MagiViewModel) {
     val rows = vm.staffCountRules()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("個人別の回数（上下限・適切回数）", style = MaterialTheme.typography.titleMedium)
             Text(
                 "各スタッフが各シフトを「1か月に何回」担当するか。上下限（個人別の制約）と適切回数（群の目標）の実効値を1か所で確認できます。",
                 style = MaterialTheme.typography.labelMedium,

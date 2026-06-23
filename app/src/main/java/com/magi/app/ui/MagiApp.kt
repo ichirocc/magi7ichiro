@@ -423,17 +423,19 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                         // [E6案A] 年次の長大スクロールを、不要カードを畳んで削減。基本情報のみ既定で展開。
                         //   展開状態は CollapsibleSection 内の rememberSaveable で保持(回転/再構成に耐える)。
                         CollapsibleSection("基本情報（シフト・グループ・スタッフ）", "yr_ws1", initiallyExpanded = true) { Ws1Card(ui, vm) }
-                        CollapsibleSection("回数設定（適切回数・個人/群レンジ）", "yr_count") { CountSettingsCard(ui, vm) }
+                        // [冗長性B] 旧「回数設定」節を撤去。中身は適切回数(apt)＝基本情報のグループ別設定、
+                        //   個人の上下限(staffRange)＝下の「個人の回数」と完全重複（軸を変えただけ）のため。
+                        //   apt は基本情報、個人上下限は「個人の回数」に一本化（実効値は「個人の回数」で確認可）。
                         CollapsibleSection("スキルグループ", "yr_skillg") { SkillGroupCard(ui, vm) }
                         CollapsibleSection("スキルのルール（C41s・C42s）", "yr_skillc") { SkillConstraintsCard(ui, vm) }
                         // [発見性] cons41(群の1日人数)/cons42(組み合わせ禁止)を、スキル版(C41s/C42s)と対称な専用節に。
                         //   従来は「ルール（並び・窓）」に6family埋もれ、見出しから群の人数/組み合わせ設定と分からなかった。
                         CollapsibleSection("グループのルール（C41 1日の人数・C42 組み合わせ禁止）", "yr_groupc") {
-                            ConstraintsCard(ui, vm, title = "グループのルール（C41 1日の人数・C42 組み合わせ禁止）",
+                            ConstraintsCard(ui, vm, title = "",
                                 keys = setOf("cons41", "cons42"))
                         }
                         CollapsibleSection("ルール（並び・窓）", "yr_cons") {
-                            ConstraintsCard(ui, vm, title = "ルールの編集（勤務の並び・回数）",
+                            ConstraintsCard(ui, vm, title = "",
                                 keys = setOf("cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn"))
                         }
                         CollapsibleSection("個人の回数（下限/上限）", "yr_range") { StaffRangeCard(ui, vm) }
