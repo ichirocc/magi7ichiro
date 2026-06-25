@@ -11,6 +11,10 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.ln
+import kotlin.math.cos
+import kotlin.math.sqrt
+import kotlin.math.PI
 import java.util.Random
 
 /**
@@ -27,6 +31,10 @@ enum class V6Algorithm { AUTO, V5, ALNS, RSI, RSI_PLUS, PORTFOLIO }
 /** ALNS の受理基準。SA=Boltzmann(従来) / GREAT_DELUGE=時間予定型 Great Deluge（水位以下を受理） /
  *  LAM_ADAPTIVE=Lam-Delosme適応冷却（受理率を目標値に追従させ温度を自己調整。Boltzmann受理を使う）。 */
 enum class AcceptMode { SA, GREAT_DELUGE, LAM_ADAPTIVE }
+
+/** ALNS の演算子選択方式。ROULETTE=重み比例(従来) / THOMPSON=Thompson sampling(平滑報酬opWを
+ *  事後平均、時間減衰ノイズで探索する確率的選択。停滞しにくく不確実性下で原理的)。 */
+enum class OpSelectMode { ROULETTE, THOMPSON }
 
 data class V6OptimizerOptions(
     val algorithm: V6Algorithm = V6Algorithm.AUTO,
@@ -46,6 +54,8 @@ data class V6OptimizerOptions(
     val explore: Double = 1.0,
     /** ALNS の受理基準。並列仮説の一部に Great Deluge を割当てて受理戦略を多様化（W0は SA でベースライン保持）。 */
     val accept: AcceptMode = AcceptMode.SA,
+    /** ALNS の演算子選択方式。並列仮説の一部に Thompson sampling を割当てて選択戦略を多様化（W0は ROULETTE でベースライン保持）。 */
+    val opSelect: OpSelectMode = OpSelectMode.ROULETTE,
 )
 
 data class V6OptimizerResult(
@@ -74,6 +84,10 @@ object V6NativeOptimizer {
         3 -> AcceptMode.LAM_ADAPTIVE
         else -> AcceptMode.SA
     }
+
+    /** [論文活用] 並列仮説で演算子選択を多様化（W1=Thompson sampling / 他=roulette）。
+     *  W0 は常に roulette でベースライン保持＝退化防止。 */
+    internal fun roleOpSelectFor(i: Int): OpSelectMode = if (i == 1) OpSelectMode.THOMPSON else OpSelectMode.ROULETTE
 
     /**
      * 時間予定型 Great Deluge の水位（Burke, Bykov, Newall & Petrovic 2004）。
@@ -161,7 +175,7 @@ object V6NativeOptimizer {
         for (i in 0 until w) {
             jobs[i] = async(Dispatchers.Default) {
                 // [HF290 役割分担＋論文活用] 各仮説に探索/精製プロファイル＋受理基準(SA/GD)を割当て多様化（W0=ベースライン）。
-                val res = run(i, options.copy(workers = 1, seed = base + (i + 1) * 0x9E3779B1L, explore = roleExploreFor(i), accept = roleAcceptFor(i))) { phase, report, iters, elapsed ->
+                val res = run(i, options.copy(workers = 1, seed = base + (i + 1) * 0x9E3779B1L, explore = roleExploreFor(i), accept = roleAcceptFor(i), opSelect = roleOpSelectFor(i))) { phase, report, iters, elapsed ->
                     if (i == 0) onProgress("仮説${(w - completed.get()).coerceAtLeast(1)}本探索中 / $phase", report, iters, elapsed)
                     // 絶対評価: 合格ライン(HARD=0)に最初に到達した仮説が、残りを即キャンセル
                     if (report != null && report.hard == 0 && winner.compareAndSet(-1, i)) {
@@ -210,6 +224,23 @@ object V6NativeOptimizer {
             if (r <= 0.0) return i
         }
         return weights.size - 1
+    }
+
+    /** [Thompson sampling] 演算子選択。平滑報酬 opW を事後平均、探索ノイズを反復で減衰させた
+     *  ガウス事後から各演算子の標本を引き、最大の演算子を選ぶ。重み比例(roulette)より停滞しにくく、
+     *  不確実性下での選択が原理的。ノイズσは序盤大きく(探索)→終盤小さく(活用)アニールする。 */
+    private fun thompsonSelect(opW: DoubleArray, iter: Long, rng: Random): Int {
+        val sigma = 0.5 / sqrt(1.0 + iter / 500.0)
+        var bestOp = 0
+        var bestSample = Double.NEGATIVE_INFINITY
+        for (k in opW.indices) {
+            val u1 = rng.nextDouble().coerceIn(1e-9, 1.0)
+            val u2 = rng.nextDouble()
+            val g = sqrt(-2.0 * ln(u1)) * cos(2.0 * PI * u2)   // Box-Muller 標準正規
+            val s = opW[k] + g * sigma
+            if (s > bestSample) { bestSample = s; bestOp = k }
+        }
+        return bestOp
     }
 
     /** [協力ポートフォリオ] 仮説 i に割り当てる方式。最上位(RSI++)を厚めに、ALNS/RSI で多様化。 */
@@ -326,7 +357,8 @@ object V6NativeOptimizer {
             }
             while (nowMs() < deadline && !shouldStop()) {
                 coroutineContext.ensureActive()
-                val op = rouletteSelect(opW, rng)
+                val op = if (options.opSelect == OpSelectMode.THOMPSON) thompsonSelect(opW, iter, rng)
+                         else rouletteSelect(opW, rng)
                 // [HF290 役割分担] explore 倍率で受理温度を調整（探索=受理寛容/精製=厳格）。explore=1.0 は従来と同一。
                 //   ただし LAM_ADAPTIVE は受理率追従の適応温度 lamTemp を使う（自己調整）。
                 val temp = if (options.accept == AcceptMode.LAM_ADAPTIVE) lamTemp

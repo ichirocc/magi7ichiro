@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 123
-        versionName = "3.17.0-lam-adaptive-sa"
+        versionCode = 124
+        versionName = "3.18.0-thompson-opselect"
     }
 
     buildTypes {
