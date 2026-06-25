@@ -360,8 +360,12 @@ object V6NativeOptimizer {
             }
             while (nowMs() < deadline && !shouldStop()) {
                 coroutineContext.ensureActive()
-                val op = if (options.opSelect == OpSelectMode.THOMPSON) thompsonSelect(opW, iter, rng)
+                var op = if (options.opSelect == OpSelectMode.THOMPSON) thompsonSelect(opW, iter, rng)
                          else rouletteSelect(opW, rng)
+                // [賢いsoft集中] HARD充足(curHard==0)時は残り探索を soft 修復へ自動的に寄せる。targeted
+                //   repair(op5=findTargetedFix; covO/c2/上下限/c41/apt 等)を一定確率で優先し、apt超過
+                //   (例:単一専門職の休過多)を手動研磨に頼らず最適化中に自動解消する。HARD>0 は従来どおりHARD優先。
+                if (curScore / 1_000_000L == 0L && rng.nextDouble() < 0.30) op = 5
                 // [HF290 役割分担] explore 倍率で受理温度を調整（探索=受理寛容/精製=厳格）。explore=1.0 は従来と同一。
                 //   ただし LAM_ADAPTIVE は受理率追従の適応温度 lamTemp を使う（自己調整）。
                 val temp = if (options.accept == AcceptMode.LAM_ADAPTIVE) lamTemp
