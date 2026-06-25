@@ -195,6 +195,7 @@ internal fun StaffRangeDialog(
 
 // ---- グループ単位の回数（一括）: 選んだグループの全職員に同じ上下限を設定する。
 //   内部は既存 staffRange への展開（vm.setGroupRange）＝新制約・スコア評価器の変更なし。 ----
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
     var dialog by remember { mutableStateOf(false) }
