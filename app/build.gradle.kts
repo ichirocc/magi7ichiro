@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 118
-        versionName = "3.12.0-native-gaps"
+        versionCode = 119
+        versionName = "3.13.0-violation-insight"
     }
 
     buildTypes {

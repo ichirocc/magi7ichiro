@@ -429,6 +429,9 @@ internal fun ScheduleGrid(
     val vioTypes = remember(ui.violationCells) {
         ui.violationCells.values.map { it.removePrefix("vio-") }.distinct()
     }
+    val vioCounts = remember(ui.violationCells) {
+        ui.violationCells.values.groupingBy { it.removePrefix("vio-") }.eachCount()
+    }
     fun shown(v: String?) = v != null && v.removePrefix("vio-") !in hiddenVio
     val maxPage = if (ui.days <= win) 0 else (ui.days - 1) / win
     val cur = page.coerceIn(0, maxPage)
@@ -446,19 +449,40 @@ internal fun ScheduleGrid(
                 Spacer(Modifier.height(10.dp))
                 ViolationLegend(vioColor)
             }
-            // [違反フィルタ] 種別が2つ以上あるときだけ絞り込みチップを出す（タップで表示/非表示）。
+            // [違反フィルタ＋内訳] 種別ごとの件数つきチップで「どの違反が何件か」を勤務表上で一覧化。
+            //   タップで表示/非表示（隠した種別はセル枠が消える）。1種別に絞れば誰の何日かが直接見える。
             if (vioTypes.size > 1) {
                 Spacer(Modifier.height(8.dp))
-                Text("違反の表示（タップで絞り込み）", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("違反の内訳（タップで絞り込み）", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                    if (hiddenVio.isNotEmpty()) {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { hiddenVio = emptySet() }) {
+                            Text("すべて表示", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     vioTypes.forEach { t ->
                         FilterChip(
                             selected = t !in hiddenVio,
                             onClick = { hiddenVio = if (t in hiddenVio) hiddenVio - t else hiddenVio + t },
-                            label = { Text(breakdownLabels[t] ?: t, style = MaterialTheme.typography.labelSmall) },
+                            label = { Text("${breakdownLabels[t] ?: t} ${vioCounts[t] ?: 0}", style = MaterialTheme.typography.labelSmall) },
                         )
                     }
+                }
+                // [誰が・いつ] 表示中の違反セルを「名前 d日」で列挙（最大8件）。7日表示で画面外の違反も把握でき、
+                //   1種別に絞ると場所が一目で分かる。グリッドを端から探さずに済む。
+                val shownLocs = ui.violationCells.entries.filter { shown(it.value) }.mapNotNull { e ->
+                    val p = e.key.split(","); val i = p.getOrNull(0)?.toIntOrNull(); val j = p.getOrNull(1)?.toIntOrNull()
+                    if (i == null || j == null) null else "${ui.staffNames.getOrNull(i) ?: "#$i"} ${j + 1}日"
+                }
+                if (shownLocs.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    val more = if (shownLocs.size > 8) " 他${shownLocs.size - 8}件" else ""
+                    Text("場所：${shownLocs.take(8).joinToString("、")}$more",
+                        style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
                 }
             }
             // [シフト記号凡例] Dﾃ=夜勤 等。記号の意味を常時表示（名称が記号と異なる場合のみ）。
