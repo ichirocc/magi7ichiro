@@ -188,8 +188,8 @@ internal fun findC3WantFix(p: Problem, eval: DeltaEvaluator, rng: Random): IntAr
  * 1 種が null でも次へフォールスルーするため、違反が少ない近最適解でも毎反復に有効手を当てやすい。
  */
 internal fun findTargetedFix(p: Problem, eval: DeltaEvaluator, rng: Random): IntArray? {
-    val order = IntArray(7) { it }
-    for (i in 6 downTo 1) { val j = rng.nextInt(i + 1); val t = order[i]; order[i] = order[j]; order[j] = t }
+    val order = IntArray(8) { it }
+    for (i in 7 downTo 1) { val j = rng.nextInt(i + 1); val t = order[i]; order[i] = order[j]; order[j] = t }
     for (idx in order) {
         val fix = when (idx) {
             0 -> findCovOFix(p, eval, rng)
@@ -198,9 +198,40 @@ internal fun findTargetedFix(p: Problem, eval: DeltaEvaluator, rng: Random): Int
             3 -> findC41Fix(p, eval, rng)
             4 -> findRangeHighFix(p, eval, rng)
             5 -> findC41sFix(p, eval, rng)
-            else -> findC3WantFix(p, eval, rng)
+            6 -> findC3WantFix(p, eval, rng)
+            else -> findAptFix(p, eval, rng)
         }
         if (fix != null) return fix
+    }
+    return null
+}
+
+/** [apt研磨] 適切回数(apt)の偏差を1セルで縮める手を探す。あるスタッフで apt 超過のシフト kOver を
+ *  1日、apt 不足の担当可シフト kUnder へ振り替える（超過−1・不足−1 の双方向改善）。
+ *  既存の find*Fix には apt 専用がなく、apt 超過(例: 単一専門職の休過多)が研磨で直らなかったため追加。
+ *  担当不可・希望ロックの日は除外。covO 等の副作用は呼び出し側スコアの受理で評価。 */
+internal fun findAptFix(p: Problem, eval: DeltaEvaluator, rng: Random): IntArray? {
+    if (p.S == 0 || p.T == 0) return null
+    val order = IntArray(p.S) { it }
+    for (i in p.S - 1 downTo 1) { val j = rng.nextInt(i + 1); val t = order[i]; order[i] = order[j]; order[j] = t }
+    for (i in order) {
+        val allowed = p.allowedShiftsForStaff(i)
+        if (allowed.isEmpty()) continue
+        val cnt = IntArray(p.K)
+        for (j in 0 until p.T) cnt[eval.at(i, j)]++
+        var kOver = -1; var kUnder = -1
+        for (k in 0 until p.K) {
+            val tg = p.apt[i][k]
+            if (tg < 0) continue
+            if (kOver < 0 && cnt[k] > tg) kOver = k
+            if (kUnder < 0 && cnt[k] < tg && allowed.contains(k)) kUnder = k
+        }
+        if (kOver < 0 || kUnder < 0 || kOver == kUnder) continue
+        val dayStart = rng.nextInt(p.T)
+        for (d in 0 until p.T) {
+            val j = (dayStart + d) % p.T
+            if (p.wish[i][j] < 0 && eval.at(i, j) == kOver) return intArrayOf(i, j, kUnder)
+        }
     }
     return null
 }
