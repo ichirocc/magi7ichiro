@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 131
-        versionName = "3.24.0-kigou-rename-propagate"
+        versionCode = 132
+        versionName = "3.25.0-group-range-list"
     }
 
     buildTypes {

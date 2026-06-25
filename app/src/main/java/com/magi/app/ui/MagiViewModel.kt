@@ -1182,6 +1182,28 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         applyStructure(stNew)
     }
 
+    data class GroupRangeView(val g: Int, val k: Int, val groupName: String, val kigou: String, val lo: String, val hi: String, val members: Int)
+
+    /** 「グループ単位の回数」適用済み一覧。グループ全メンバーが同一の非空レンジを持つ (g,k) のみ＝
+     *  一括適用された(個別に変更されていない)グループ上下限を再構成して表示する。×で全員分をクリア。 */
+    fun groupRangeSummary(): List<GroupRangeView> {
+        val st = state ?: return emptyList()
+        val out = mutableListOf<GroupRangeView>()
+        st.groups.forEachIndexed { g, gr ->
+            val members = st.staff.indices.filter { st.staff[it].groupIdx == g }
+            if (members.isEmpty()) return@forEachIndexed
+            st.shifts.forEachIndexed { k, sh ->
+                val ranges = members.map { st.staffRange["$it,$k"] }
+                val lo = ranges.first()?.lo ?: ""
+                val hi = ranges.first()?.hi ?: ""
+                if ((lo.isNotBlank() || hi.isNotBlank()) && ranges.all { (it?.lo ?: "") == lo && (it?.hi ?: "") == hi }) {
+                    out.add(GroupRangeView(g, k, gr.name, sh.kigou, lo, hi, members.size))
+                }
+            }
+        }
+        return out.sortedWith(compareBy({ it.g }, { it.k }))
+    }
+
     /** [直せる導線] 集計セル(職員別)の違反詳細用しきい値: 下限/上限(staffRange)・目標(apt実効)。未設定は null。 */
     fun staffCellLimits(i: Int, k: Int): Triple<Int?, Int?, Int?> {
         val st = state ?: return Triple(null, null, null)

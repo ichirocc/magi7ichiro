@@ -205,6 +205,33 @@ fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // [適用済み一覧] 一括適用したグループ上下限(全メンバー同一レンジ)を表示。各メンバーの個人の回数にも
+            //   展開済みだが、ここでグループ単位に集約して確認・削除できるようにする。×=全員分クリア。
+            val applied = vm.groupRangeSummary()
+            if (applied.isNotEmpty()) {
+                Text("適用中のグループ上下限（${applied.size}件・個人の回数にも展開済み）",
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    applied.forEach { gr ->
+                        val rangeLab = when {
+                            gr.lo.isNotBlank() && gr.hi.isNotBlank() -> "${gr.lo}–${gr.hi}"
+                            gr.hi.isNotBlank() -> "≤${gr.hi}"
+                            gr.lo.isNotBlank() -> "≥${gr.lo}"
+                            else -> ""
+                        }
+                        InputChip(
+                            selected = false,
+                            enabled = !ui.running,
+                            onClick = { dialog = true },
+                            label = { Text("${gr.groupName}·${gr.kigou} $rangeLab（${gr.members}名）") },
+                            trailingIcon = {
+                                Icon(Icons.Filled.Close, contentDescription = "削除",
+                                    modifier = Modifier.size(18.dp).clickable(enabled = !ui.running) { vm.setGroupRange(gr.g, gr.k, "", "") })
+                            },
+                        )
+                    }
+                }
+            }
             AddRowButton("グループに上下限を適用", onClick = { dialog = true }, enabled = ui.loaded && !ui.running)
         }
     }
