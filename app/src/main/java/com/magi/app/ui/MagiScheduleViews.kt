@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.TextButton
@@ -408,6 +409,7 @@ internal fun ScheduleModeCard(
 }
 
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ScheduleGrid(
     ui: UiState, onCellClick: (Int, Int) -> Unit, proMode: Boolean = false,
@@ -421,6 +423,13 @@ internal fun ScheduleGrid(
     // [プロ一括編集] 1ヶ月俯瞰での複数選択（i*100000+j のキー集合）。
     val proSel = remember { mutableStateListOf<Long>() }
     var page by rememberSaveable { mutableStateOf(0) }
+    // [違反フィルタ] グリッドのセル違反を種別ごとに表示/非表示。hiddenVio に入れた家族キーを隠す。
+    //   violationCells の値は "vio-<famKey>" なので接頭辞を外して種別を取り出す。自己完結（VM不要）。
+    var hiddenVio by remember { mutableStateOf(setOf<String>()) }
+    val vioTypes = remember(ui.violationCells) {
+        ui.violationCells.values.map { it.removePrefix("vio-") }.distinct()
+    }
+    fun shown(v: String?) = v != null && v.removePrefix("vio-") !in hiddenVio
     val maxPage = if (ui.days <= win) 0 else (ui.days - 1) / win
     val cur = page.coerceIn(0, maxPage)
     Card(Modifier.fillMaxWidth()) {
@@ -437,6 +446,23 @@ internal fun ScheduleGrid(
                 Spacer(Modifier.height(10.dp))
                 ViolationLegend(vioColor)
             }
+            // [違反フィルタ] 種別が2つ以上あるときだけ絞り込みチップを出す（タップで表示/非表示）。
+            if (vioTypes.size > 1) {
+                Spacer(Modifier.height(8.dp))
+                Text("違反の表示（タップで絞り込み）", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    vioTypes.forEach { t ->
+                        FilterChip(
+                            selected = t !in hiddenVio,
+                            onClick = { hiddenVio = if (t in hiddenVio) hiddenVio - t else hiddenVio + t },
+                            label = { Text(breakdownLabels[t] ?: t, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+            }
+            // [シフト記号凡例] Dﾃ=夜勤 等。記号の意味を常時表示（名称が記号と異なる場合のみ）。
+            ShiftSymbolLegend(ui.shiftSymbols, ui.shiftNames)
             Spacer(Modifier.height(12.dp))
             BoxWithConstraints {
                 val totalW = maxWidth
@@ -491,7 +517,7 @@ internal fun ScheduleGrid(
                                         for (j in startDay until endDay) {
                                             val k = row.getOrNull(j) ?: -1
                                             val vioVal = ui.violationCells["$i,$j"]
-                                            val vio = vioVal != null
+                                            val vio = shown(vioVal)   // [違反フィルタ] 隠した種別はハイライトしない
                                             val hard = isHardCellViolation(vioVal)
                                             val symbol = if (k < 0) "·" else ui.shiftSymbols.getOrNull(k) ?: k.toString()
                                             val bg = if (k < 0) cs.surface else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
@@ -626,7 +652,7 @@ internal fun ScheduleGrid(
                                         for (j in 0 until ui.days) {
                                             val k = row.getOrNull(j) ?: -1
                                             val vioVal = ui.violationCells["$i,$j"]
-                                            val vio = vioVal != null
+                                            val vio = shown(vioVal)   // [違反フィルタ] 隠した種別はハイライトしない
                                             val hard = isHardCellViolation(vioVal)
                                             val bg = if (k < 0) cs.surfaceVariant else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
                                             val symA = if (k < 0) "未割当" else (ui.shiftSymbols.getOrNull(k) ?: "")
@@ -792,6 +818,33 @@ internal fun ViolationLegend(vioColor: Color) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(Modifier.size(width = 22.dp, height = 16.dp).violationBorder(false, vioColor, 4.dp))
             Text("破線＝要調整", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * [凡例] シフト記号の意味（Dﾃ＝夜勤 等）。記号だけでは意味が分からない初見ユーザー向けに、
+ *  名称が記号と異なるシフトのみ「記号 ＝ 名称」を常時表示する。意味のある名称が無ければ何も出さない。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ShiftSymbolLegend(symbols: List<String>, names: List<String>) {
+    val cs = MaterialTheme.colorScheme
+    val pairs = symbols.mapIndexedNotNull { i, sym ->
+        val nm = names.getOrNull(i)?.takeIf { it.isNotBlank() && it != sym }
+        if (nm != null) sym to nm else null
+    }
+    if (pairs.isEmpty()) return
+    Column {
+        Spacer(Modifier.height(8.dp))
+        Text("記号の意味", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            pairs.forEach { (sym, nm) ->
+                Box(Modifier.background(cs.surfaceVariant, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("$sym ＝ $nm", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+                }
+            }
         }
     }
 }

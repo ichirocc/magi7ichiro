@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 117
-        versionName = "3.11.0-smart-earlyexit"
+        versionCode = 118
+        versionName = "3.12.0-native-gaps"
     }
 
     buildTypes {
