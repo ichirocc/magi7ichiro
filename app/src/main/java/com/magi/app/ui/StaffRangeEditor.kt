@@ -192,3 +192,86 @@ internal fun StaffRangeDialog(
         },
     )
 }
+
+// ---- グループ単位の回数（一括）: 選んだグループの全職員に同じ上下限を設定する。
+//   内部は既存 staffRange への展開（vm.setGroupRange）＝新制約・スコア評価器の変更なし。 ----
+@Composable
+fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
+    var dialog by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "グループ単位でシフトの回数 下限/上限を一括設定します。選んだグループに所属する全職員の個人上下限（下限割れ/上限超過で最適化）に反映されます。",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AddRowButton("グループに上下限を適用", onClick = { dialog = true }, enabled = ui.loaded && !ui.running)
+        }
+    }
+    if (dialog) {
+        GroupRangeDialog(
+            groups = vm.groupLabels(),
+            shifts = vm.shiftKigouList(),
+            allowedFor = { g -> vm.allowedShiftsForGroup(g) },
+            memberCount = { g -> vm.groupMemberCount(g) },
+            onApply = { g, k, lo, hi -> vm.setGroupRange(g, k, lo, hi); dialog = false },
+            onClose = { dialog = false },
+        )
+    }
+}
+
+@Composable
+internal fun GroupRangeDialog(
+    groups: List<String>,
+    shifts: List<String>,
+    allowedFor: (Int) -> Set<Int>,
+    memberCount: (Int) -> Int,
+    onApply: (Int, Int, String, String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var g by remember { mutableStateOf(0) }
+    var k by remember { mutableStateOf(0) }
+    var lo by remember { mutableStateOf("") }
+    var hi by remember { mutableStateOf("") }
+    var openG by remember { mutableStateOf(false) }
+    var openK by remember { mutableStateOf(false) }
+    val allowed = allowedFor(g)
+    val ok = g in groups.indices && k in allowed && (lo.isNotBlank() || hi.isNotBlank())
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = {
+            DialogConfirmButton("適用", enabled = ok, onClick = { if (ok) onApply(g, k, lo.trim(), hi.trim()) })
+        },
+        dismissButton = { DialogDismissButton(onClick = onClose) },
+        title = { Text("グループ単位の回数") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("グループ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box {
+                    OutlinedButton(onClick = { openG = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(groups.getOrNull(g)?.let { "$it（${memberCount(g)}名）" } ?: "(選択)")
+                    }
+                    DropdownMenu(expanded = openG, onDismissRequest = { openG = false }) {
+                        groups.forEachIndexed { idx, n ->
+                            DropdownMenuItem(text = { Text("$n（${memberCount(idx)}名）") }, onClick = { g = idx; k = 0; openG = false })
+                        }
+                    }
+                }
+                Text("シフト（全員が担当可のもの）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box {
+                    OutlinedButton(onClick = { openK = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(shifts.getOrNull(k)?.takeIf { k in allowed } ?: "(選択)")
+                    }
+                    DropdownMenu(expanded = openK, onDismissRequest = { openK = false }) {
+                        shifts.forEachIndexed { idx, kg ->
+                            if (idx in allowed) DropdownMenuItem(text = { Text(kg) }, onClick = { k = idx; openK = false })
+                        }
+                    }
+                }
+                NumberStepper("下限", lo, { lo = it }, min = 0, blankLabel = "なし")
+                NumberStepper("上限", hi, { hi = it }, min = 0, blankLabel = "なし")
+                Text("選んだグループの全員に同じ上下限を設定します（既存の個人設定は上書き）。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    )
+}

@@ -56,6 +56,9 @@ data class V6OptimizerOptions(
     val accept: AcceptMode = AcceptMode.SA,
     /** ALNS の演算子選択方式。並列仮説の一部に Thompson sampling を割当てて選択戦略を多様化（W0は ROULETTE でベースライン保持）。 */
     val opSelect: OpSelectMode = OpSelectMode.ROULETTE,
+    /** 局所移動に短期Tabu記憶を適用（直近変更セルの即時復帰を tenure 期間禁止。global最良更新時はアスピレーションで解禁）。
+     *  並列仮説の一部にのみ割当て（W0はOFFでベースライン保持）。destroy/repair等の大近傍手は対象外。 */
+    val tabu: Boolean = false,
 )
 
 data class V6OptimizerResult(

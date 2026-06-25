@@ -439,6 +439,7 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                                 keys = setOf("cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn"))
                         }
                         CollapsibleSection("個人の回数（下限/上限）", "yr_range") { StaffRangeCard(ui, vm) }
+                        CollapsibleSection("グループ単位の回数（一括）", "yr_grange") { GroupRangeCard(ui, vm) }
                     }
                 }
                 3 -> {

@@ -1142,6 +1142,38 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         logOp("I", "個人レンジ削除: ${opNm(i)} ${opSy(k)}"); applyStructure(st.copy(staffRange = st.staffRange - "$i,$k"))
     }
 
+    // ---- グループ単位の回数（一括）: 既存 staffRange をグループ所属職員に展開する。
+    //   新しい制約種別やスコア評価器の変更は不要（low/high は既に重み90/45で最適化対象）＝退行リスクなし。
+    //   業務担当者が値を入力しボタンで適用する operator ツール（HF77準拠）。 ----
+    fun groupLabels(): List<String> = state?.groups?.map {
+        if (it.kigou.isNotBlank() && it.kigou != it.name) "${it.name}·${it.kigou}" else it.name
+    } ?: emptyList()
+
+    fun groupMemberCount(g: Int): Int = state?.staff?.count { it.groupIdx == g } ?: 0
+
+    /** グループの全メンバーが担当できるシフトの積集合（下限を全員が満たせる範囲に限定し構造的floorを防ぐ）。 */
+    fun allowedShiftsForGroup(g: Int): Set<Int> {
+        val st = state ?: return emptySet()
+        val members = st.staff.indices.filter { st.staff[it].groupIdx == g }
+        if (members.isEmpty()) return emptySet()
+        return members.map { allowedShiftsFor(it).toHashSet() }.reduce { a, b -> a.apply { retainAll(b) } }
+    }
+
+    /** グループ g に所属する全職員の staffRange["i,k"] を [lo,hi] に一括設定（両方空なら一括削除）。 */
+    fun setGroupRange(g: Int, k: Int, lo: String, hi: String) {
+        val st = state ?: return
+        val members = st.staff.indices.filter { st.staff[it].groupIdx == g }
+        if (members.isEmpty()) return
+        val m = st.staffRange.toMutableMap()
+        for (i in members) {
+            val key = "$i,$k"
+            if (lo.isBlank() && hi.isBlank()) m.remove(key) else m[key] = Range(lo.trim(), hi.trim())
+        }
+        val gname = st.groups.getOrNull(g)?.name ?: "#$g"
+        logOp("I", "グループ一括レンジ: $gname ${opSy(k)} → ${if (lo.isBlank() && hi.isBlank()) "削除" else "${lo.ifBlank { "?" }}〜${hi.ifBlank { "?" }}"} (${members.size}名)")
+        applyStructure(st.copy(staffRange = m))
+    }
+
     /** [直せる導線] 集計セル(職員別)の違反詳細用しきい値: 下限/上限(staffRange)・目標(apt実効)。未設定は null。 */
     fun staffCellLimits(i: Int, k: Int): Triple<Int?, Int?, Int?> {
         val st = state ?: return Triple(null, null, null)
