@@ -231,6 +231,11 @@ object V6FinalPort {
             }
             onProgress(phase, report, iters, elapsed)   // ユーザーコールバックはロック外で呼ぶ
         }
+        // [後処理予約] 探索が予算を使い切ると後処理(平準化/fair等のkeep-best研磨)が時間切れ(実機8ms)になる。
+        //   末尾に postReserveMs を予約し、探索は searchDeadlineMs で止め、後処理は hardDeadlineMs まで走らせる。
+        //   stall早期終了時は探索が早く返るので後処理は自然に余裕を得る＝無改善の末尾だけを後処理へ回す。
+        val postReserveMs = (budgetMs / 12).coerceIn(8_000L, 25_000L)
+        val searchDeadlineMs = (hardDeadlineMs - postReserveMs).coerceAtLeast(startMs + minRunMs)
         val shouldStop = {
             val now = System.currentTimeMillis()
             // [賢い早期脱出] bestHard が「解消不能な下限(hardFloor)」以下＝解けるHARDは出し切った状態。
@@ -238,11 +243,13 @@ object V6FinalPort {
             //   hardFloor=0（実現不能希望なし）なら従来の「bestHard==0」と完全一致＝挙動不変。
             val effStall = if (bestHard.get() <= hardFloor) stallHardMs else stallMs
             when {
-                now >= hardDeadlineMs || !isActive -> true
+                now >= searchDeadlineMs || !isActive -> true
                 now - startMs > minRunMs && now - lastImproveMs.get() > effStall -> { stagnationFired.set(true); true }
                 else -> false
             }
         }
+        // 後処理(runPostOptimization)用の別締切。stall では止めず予約枠 hardDeadlineMs まで使える。
+        val postShouldStop = { System.currentTimeMillis() >= hardDeadlineMs || !isActive }
 
         val tFirst0 = System.currentTimeMillis()
         val first = V6NativeOptimizer.optimize(state, schedule, optsR, shouldStop, progressWatch)
@@ -286,7 +293,7 @@ object V6FinalPort {
 
         val post = V6HotfixPasses.runPostOptimization(
             state, relinkSched, label.tech,
-            shouldStop = shouldStop,
+            shouldStop = postShouldStop,
             onPhase = { phase -> progressWatch(phase, null, System.currentTimeMillis() - startMs, budgetMs) },
             deadlineMs = hardDeadlineMs,   // [残予算ガード] HF66 が後段パスを押し出さないよう全体締切を渡す
         )

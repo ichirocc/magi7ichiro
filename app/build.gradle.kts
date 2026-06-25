@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 128
-        versionName = "3.22.0-adaptive-soft-focus"
+        versionCode = 129
+        versionName = "3.23.0-floor-soft-and-postreserve"
     }
 
     buildTypes {

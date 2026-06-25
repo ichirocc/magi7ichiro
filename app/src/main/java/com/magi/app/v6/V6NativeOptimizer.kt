@@ -362,10 +362,13 @@ object V6NativeOptimizer {
                 coroutineContext.ensureActive()
                 var op = if (options.opSelect == OpSelectMode.THOMPSON) thompsonSelect(opW, iter, rng)
                          else rouletteSelect(opW, rng)
-                // [賢いsoft集中] HARD充足(curHard==0)時は残り探索を soft 修復へ自動的に寄せる。targeted
-                //   repair(op5=findTargetedFix; covO/c2/上下限/c41/apt 等)を一定確率で優先し、apt超過
-                //   (例:単一専門職の休過多)を手動研磨に頼らず最適化中に自動解消する。HARD>0 は従来どおりHARD優先。
-                if (curScore / 1_000_000L == 0L && rng.nextDouble() < 0.30) op = 5
+                // [賢いsoft集中] HARD が最良水準(curHard<=bestHard)に到達したら残り探索を soft 修復へ寄せる。
+                //   HARD=0 なら積極的に(0.30)、HARD>0 の床(構造的に解けない covU/pref/c3n 等)では控えめに(0.15)
+                //   op5(targeted repair=covO/c2/上下限/c41/c41s/c3Want/apt 修復)を優先。HARD>床 の間はHARD優先で不変。
+                //   従来 curHard==0 限定だと、構造的HARD床から下がれない局面で soft研磨が一度も起動しなかった
+                //   (apt超過/fair が放置)。最良HARD水準なら床>0 でも soft を磨くよう修正。
+                val softFocusProb = if (bestScore / 1_000_000L == 0L) 0.30 else 0.15
+                if (curScore / 1_000_000L <= bestScore / 1_000_000L && rng.nextDouble() < softFocusProb) op = 5
                 // [HF290 役割分担] explore 倍率で受理温度を調整（探索=受理寛容/精製=厳格）。explore=1.0 は従来と同一。
                 //   ただし LAM_ADAPTIVE は受理率追従の適応温度 lamTemp を使う（自己調整）。
                 val temp = if (options.accept == AcceptMode.LAM_ADAPTIVE) lamTemp
