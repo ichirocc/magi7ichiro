@@ -367,8 +367,8 @@ object V6NativeOptimizer {
                 //   op5(targeted repair=covO/c2/上下限/c41/c41s/c3Want/apt 修復)を優先。HARD>床 の間はHARD優先で不変。
                 //   従来 curHard==0 限定だと、構造的HARD床から下がれない局面で soft研磨が一度も起動しなかった
                 //   (apt超過/fair が放置)。最良HARD水準なら床>0 でも soft を磨くよう修正。
-                val softFocusProb = if (bestScore / 1_000_000L == 0L) 0.30 else 0.15
-                if (curScore / 1_000_000L <= bestScore / 1_000_000L && rng.nextDouble() < softFocusProb) op = 5
+                val softFocusProb = if (globalScore / 1_000_000L == 0L) 0.30 else 0.15
+                if (curScore / 1_000_000L <= globalScore / 1_000_000L && rng.nextDouble() < softFocusProb) op = 5
                 // [HF290 役割分担] explore 倍率で受理温度を調整（探索=受理寛容/精製=厳格）。explore=1.0 は従来と同一。
                 //   ただし LAM_ADAPTIVE は受理率追従の適応温度 lamTemp を使う（自己調整）。
                 val temp = if (options.accept == AcceptMode.LAM_ADAPTIVE) lamTemp
