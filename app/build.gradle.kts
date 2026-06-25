@@ -12,7 +12,7 @@ android {
         minSdk = 35
         targetSdk = 36
         versionCode = 132
-        versionName = "3.25.0-group-range-list"
+        versionName = "3.25.0-group-range-summary"
     }
 
     buildTypes {

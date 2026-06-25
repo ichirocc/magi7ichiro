@@ -223,7 +223,7 @@ fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
                             selected = false,
                             enabled = !ui.running,
                             onClick = { dialog = true },
-                            label = { Text("${gr.groupName}·${gr.kigou} $rangeLab（${gr.members}名）") },
+                            label = { Text("${gr.groupName}·${gr.kigou} $rangeLab（${if (gr.shared >= gr.members) "${gr.members}" else "${gr.shared}/${gr.members}"}名）") },
                             trailingIcon = {
                                 Icon(Icons.Filled.Close, contentDescription = "削除",
                                     modifier = Modifier.size(18.dp).clickable(enabled = !ui.running) { vm.setGroupRange(gr.g, gr.k, "", "") })

@@ -1182,7 +1182,7 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
         applyStructure(stNew)
     }
 
-    data class GroupRangeView(val g: Int, val k: Int, val groupName: String, val kigou: String, val lo: String, val hi: String, val members: Int)
+    data class GroupRangeView(val g: Int, val k: Int, val groupName: String, val kigou: String, val lo: String, val hi: String, val members: Int, val shared: Int = members)
 
     /** 「グループ単位の回数」適用済み一覧。グループ全メンバーが同一の非空レンジを持つ (g,k) のみ＝
      *  一括適用された(個別に変更されていない)グループ上下限を再構成して表示する。×で全員分をクリア。 */
@@ -1193,11 +1193,19 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             val members = st.staff.indices.filter { st.staff[it].groupIdx == g }
             if (members.isEmpty()) return@forEachIndexed
             st.shifts.forEachIndexed { k, sh ->
-                val ranges = members.map { st.staffRange["$it,$k"] }
-                val lo = ranges.first()?.lo ?: ""
-                val hi = ranges.first()?.hi ?: ""
-                if ((lo.isNotBlank() || hi.isNotBlank()) && ranges.all { (it?.lo ?: "") == lo && (it?.hi ?: "") == hi }) {
-                    out.add(GroupRangeView(g, k, gr.name, sh.kigou, lo, hi, members.size))
+                // [緩和] メンバーの非空レンジを (lo,hi) で集計し、最多共有レンジを代表として出す。完全一致で
+                //   なくても「2名以上が共有」なら表示し N/M名 を添える。これにより一括適用後に一部メンバーを
+                //   個別編集しても、グループ単位のレンジが消えずに残って見える（旧実装は全員一致のみ表示）。
+                val counts = HashMap<Pair<String, String>, Int>()
+                for (i in members) {
+                    val r = st.staffRange["$i,$k"] ?: continue
+                    if (r.lo.isBlank() && r.hi.isBlank()) continue
+                    val key = r.lo to r.hi
+                    counts[key] = (counts[key] ?: 0) + 1
+                }
+                val best = counts.maxByOrNull { it.value }
+                if (best != null && (best.value >= 2 || members.size == 1)) {
+                    out.add(GroupRangeView(g, k, gr.name, sh.kigou, best.key.first, best.key.second, members.size, best.value))
                 }
             }
         }
