@@ -60,6 +60,9 @@ data class MagiState(
     val cons41s: List<C41Row> = emptyList(),
     /** スキルグループの C42 相当: スキル群 g1 の s1 と スキル群 g2 の s2 が同日に併存不可（既存C42のスキル版）。 */
     val cons42s: List<C42Row> = emptyList(),
+    /** [2層レンジ] グループ単位の上下限 groupRange["g,k"]=Range(lo,hi)。個人レンジ(staffRange)とは別保存。
+     *  有効レンジ = 個人[i,k] が在ればそれ、無ければ グループ[g,k]（個人優先）。Problem構築時に合成する。 */
+    val groupRange: Map<String, Range> = emptyMap(),
     /** Per-shift display colour overrides, keyed by shift kigou -> "#rrggbb". Display only (no engine effect). */
     val shiftColors: Map<String, String> = emptyMap(),
     /** Anything we do not model yet, kept verbatim so export round-trips losslessly. */

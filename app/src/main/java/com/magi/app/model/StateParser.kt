@@ -46,6 +46,13 @@ object StateParser {
                 if (ro != null) staffRange[k] = Range(asStr(ro.opt("lo")), asStr(ro.opt("hi")))
             }
         }
+        val groupRange = HashMap<String, Range>()
+        o.optJSONObject("groupRange")?.let { r ->
+            r.keys().forEach { k ->
+                val ro = r.optJSONObject(k)
+                if (ro != null) groupRange[k] = Range(asStr(ro.opt("lo")), asStr(ro.opt("hi")))
+            }
+        }
         val needDay1 = strMap(o.optJSONObject("needDay1"))
         val needDay2 = strMap(o.optJSONObject("needDay2"))
         val shiftColors = strMap(o.optJSONObject("shiftColors"))
@@ -76,7 +83,7 @@ object StateParser {
         // Keep unmodelled top-level keys verbatim for lossless export.
         val modelled = setOf(
             "shifts", "groups", "staff", "groupShift", "groupShiftApt", "schedule", "wishes", "staffRange",
-            "needDay1", "needDay2", "cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn",
+            "needDay1", "needDay2", "groupRange", "cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn",
             "cons41", "cons42", "shiftColors", "startDate", "endDate", "use2Patterns",
             "skillGroups", "cons41s", "cons42s"
         )
@@ -89,7 +96,7 @@ object StateParser {
             shifts = shifts, groups = groups, staff = staff,
             use2Patterns = o.optBoolean("use2Patterns", false),
             groupShift = groupShift, groupShiftApt = groupShiftApt, schedule = schedule,
-            wishes = wishes, staffRange = staffRange,
+            wishes = wishes, staffRange = staffRange, groupRange = groupRange,
             needDay1 = needDay1, needDay2 = needDay2,
             shiftColors = shiftColors,
             cons1 = cons1, cons2 = cons2,
@@ -183,6 +190,9 @@ object StateParser {
         val sr = JSONObject()
         for ((k, v) in state.staffRange) { val ro = JSONObject(); ro.put("lo", v.lo); ro.put("hi", v.hi); sr.put(k, ro) }
         o.put("staffRange", sr)
+        val gr = JSONObject()
+        for ((k, v) in state.groupRange) { val ro = JSONObject(); ro.put("lo", v.lo); ro.put("hi", v.hi); gr.put(k, ro) }
+        o.put("groupRange", gr)
         o.put("needDay1", strKeyMap(state.needDay1))
         o.put("needDay2", strKeyMap(state.needDay2))
         o.put("shiftColors", strKeyMap(state.shiftColors))

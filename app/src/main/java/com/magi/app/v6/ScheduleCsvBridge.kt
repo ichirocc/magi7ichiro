@@ -601,12 +601,25 @@ object ConstraintsCsvIO {
         for (c in state.cons41s) appendCsvRow(sb, listOf("スキル群回数", c.groupKigou, c.shiftKigou, c.l, c.u))
         for (c in state.cons42) appendCsvRow(sb, listOf("群組合せ禁止", c.g1Kigou, c.s1Kigou, c.g2Kigou, c.s2Kigou))
         for (c in state.cons42s) appendCsvRow(sb, listOf("スキル群組合せ禁止", c.g1Kigou, c.s1Kigou, c.g2Kigou, c.s2Kigou))
-        for ((key, r) in state.staffRange) {
-            val p = key.split(","); val i = p.getOrNull(0)?.toIntOrNull(); val k = p.getOrNull(1)?.toIntOrNull()
-            if (i == null || k == null) continue
-            val name = state.staff.getOrNull(i)?.name ?: continue
-            val sym = state.shifts.getOrNull(k)?.kigou ?: continue
-            appendCsvRow(sb, listOf("個人レンジ", name, sym, r.lo, r.hi))
+        // [2層レンジ] CSVは単層モデル(個人レンジのみ)。グループ既定を全メンバーへ展開し個人レンジで上書きした
+        //   有効レンジを「個人レンジ」行として書き出す（Web/VBA互換のため flatten。個人優先）。
+        run {
+            val eff = LinkedHashMap<String, Range>()
+            state.staff.forEachIndexed { i, s ->
+                val g = s.groupIdx
+                state.shifts.indices.forEach { k ->
+                    val gr = state.groupRange["$g,$k"] ?: return@forEach
+                    eff["$i,$k"] = gr
+                }
+            }
+            for ((key, r) in state.staffRange) eff[key] = r
+            for ((key, r) in eff) {
+                val p = key.split(","); val i = p.getOrNull(0)?.toIntOrNull(); val k = p.getOrNull(1)?.toIntOrNull()
+                if (i == null || k == null) continue
+                val name = state.staff.getOrNull(i)?.name ?: continue
+                val sym = state.shifts.getOrNull(k)?.kigou ?: continue
+                appendCsvRow(sb, listOf("個人レンジ", name, sym, r.lo, r.hi))
+            }
         }
         return sb.toString()
     }
