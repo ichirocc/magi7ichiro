@@ -56,7 +56,6 @@ fun Ws1Card(ui: UiState, vm: MagiViewModel) {
     val v = vm.ws1() ?: return
     var dialog by remember { mutableStateOf<Ws1Dialog?>(null) }
     var daysText by remember(v.days) { mutableStateOf(v.days.toString()) }
-    var confirmResetApt by remember { mutableStateOf(false) }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -159,56 +158,9 @@ fun Ws1Card(ui: UiState, vm: MagiViewModel) {
                 }
             }
 
-            // --- groupShiftApt（適切回数）: Web版「グループ別 担当シフトと適切回数」相当 ---
-            // 担当ON のシフトだけ、1人あたり期間内目標回数を −/＋ で設定（空欄＝目標なし）。
-            Spacer(Modifier.height(12.dp))
-            Text("適切回数（任意・1人あたり目標）", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            Text("ONのシフトに目標回数を設定すると、最適化が各人をその回数に近づけます（空欄＝目標なし）",
-                fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (v.groups.isNotEmpty()) {
-                val aptSet = v.groupShiftApt.sumOf { row -> row.count { it.trim().isNotEmpty() } }
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DeleteRowButton(onClick = { confirmResetApt = true }, enabled = aptSet > 0, text = "適切回数を全リセット")
-                    Text(if (aptSet > 0) "設定中 $aptSet 件" else "設定なし",
-                        fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            v.groups.forEachIndexed { g, gr ->
-                val onShifts = v.shifts.indices.filter { v.groupShift.getOrNull(g)?.getOrNull(it) == 1 }
-                if (onShifts.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("${gr.kigou}  ${gr.name}", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        onShifts.forEach { k ->
-                            val apt = v.groupShiftApt.getOrNull(g)?.getOrNull(k) ?: ""
-                            AptStepper(label = v.shifts[k].kigou, value = apt,
-                                onChange = { vm.ws1SetGroupApt(g, k, it) })
-                        }
-                    }
-                }
-            }
-        }
-    }
+            // [③回数へ移動] 適切回数(apt)gridは「回数（1人あたり）」節の AptCard へ分離した。
 
-    if (confirmResetApt) {
-        AlertDialog(
-            onDismissRequest = { confirmResetApt = false },
-            title = { Text("適切回数(apt)を全リセット") },
-            text = {
-                Text(
-                    "全グループ×全シフトの適切回数を空欄（目標なし）に戻します。\n" +
-                        "・apt由来のソフト違反は消えます\n" +
-                        "・担当ON/OFF・回数レンジ・勤務表は変わりません\n" +
-                        "・「元に戻す」で復帰できます\n実行しますか？",
-                    fontSize = 14.sp,
-                )
-            },
-            confirmButton = {
-                DialogDangerButton("全リセット", onClick = { vm.ws1ResetGroupApt(); confirmResetApt = false })
-            },
-            dismissButton = { DialogDismissButton(onClick = { confirmResetApt = false }) },
-        )
+        }
     }
 
     when (val d = dialog) {
@@ -395,6 +347,63 @@ private fun W1Field(label: String, value: String, modifier: Modifier = Modifier,
 }
 
 /** 適切回数のステッパー（記号 −[値]＋）。空欄＝目標なし。0も設定可（空欄→0→1…、0で−→空欄）。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AptCard(ui: UiState, vm: MagiViewModel) {
+    val v = vm.ws1() ?: return
+    var confirmResetApt by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("目標（1人あたり・やわらかい）", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("「この勤務に1か月で何回くらい入ってほしい」という目安です。最適化が各人をその回数に近づけようとします（必ず守るわけではありません。空欄＝目標なし）。担当ONの勤務にだけ設定できます。",
+                fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (v.groups.isNotEmpty()) {
+                val aptSet = v.groupShiftApt.sumOf { row -> row.count { it.trim().isNotEmpty() } }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DeleteRowButton(onClick = { confirmResetApt = true }, enabled = aptSet > 0, text = "目標を全リセット")
+                    Text(if (aptSet > 0) "設定中 $aptSet 件" else "設定なし",
+                        fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            v.groups.forEachIndexed { g, gr ->
+                val onShifts = v.shifts.indices.filter { v.groupShift.getOrNull(g)?.getOrNull(it) == 1 }
+                if (onShifts.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("${gr.kigou}  ${gr.name}", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        onShifts.forEach { k ->
+                            val apt = v.groupShiftApt.getOrNull(g)?.getOrNull(k) ?: ""
+                            AptStepper(label = v.shifts[k].kigou, value = apt,
+                                onChange = { vm.ws1SetGroupApt(g, k, it) })
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (confirmResetApt) {
+        AlertDialog(
+            onDismissRequest = { confirmResetApt = false },
+            title = { Text("目標を全リセット") },
+            text = {
+                Text(
+                    "全グループ×全シフトの「目標」を空欄（目標なし）に戻します。\n" +
+                        "・目標由来のやわらかい違反は消えます\n" +
+                        "・担当ON/OFF・回数の下限上限・勤務表は変わりません\n" +
+                        "・「元に戻す」で復帰できます\n実行しますか？",
+                    fontSize = 14.sp,
+                )
+            },
+            confirmButton = {
+                DialogDangerButton("全リセット", onClick = { vm.ws1ResetGroupApt(); confirmResetApt = false })
+            },
+            dismissButton = { DialogDismissButton(onClick = { confirmResetApt = false }) },
+        )
+    }
+}
+
 @Composable
 private fun AptStepper(label: String, value: String, onChange: (String) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 6.dp)) {

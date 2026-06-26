@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 137
-        versionName = "3.28.0-wish-subtab"
+        versionCode = 138
+        versionName = "3.29.0-edit-tab-redesign"
     }
 
     buildTypes {

@@ -215,8 +215,8 @@ private fun AddConstraintDialog(family: String, vm: MagiViewModel, onClose: () -
             var e by remember { mutableStateOf("") }
             val title = when (family) {
                 "cons3n" -> "禁止の並びを追加"
-                "cons3m" -> "推奨の並びを追加"
-                "cons3mn" -> "回避の並びを追加"
+                "cons3m" -> "並び希望を追加"
+                "cons3mn" -> "並び回避を追加"
                 else -> "必須の並びを追加"
             }
             Shell(title, onClose, { vm.addCons3(family, listOf(a, b, c, d, e)); onClose() }, a.isNotBlank()) {

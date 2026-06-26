@@ -427,6 +427,22 @@ internal fun AppearanceCard(
  * アンカージャンプ(案B)は LazyColumn 変換が要るため別途・実機目視前提。
  */
 @Composable
+internal fun SectionNote(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+@Composable
 internal fun CollapsibleSection(
     title: String,
     stateKey: String,

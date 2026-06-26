@@ -145,7 +145,7 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
     var editingCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var oneHand by rememberSaveable { mutableStateOf(false) }
     var proMode by rememberSaveable { mutableStateOf(false) }   // [プロ編集] 表示モード（false=かんたん / true=プロ）
-    var editScope by rememberSaveable { mutableStateOf(0) }   // [Web反映] 編集タブ: 0=月次 / 1=シフト希望 / 2=年次マスター
+    var editScope by rememberSaveable { mutableStateOf(0) }   // [Web反映] 編集タブ: 0=今月の調整 / 1=シフト希望 / 2=基本マスター
     var wishConfirm by remember { mutableStateOf(0) } // >0: 担当外件数の確認ダイアログ表示
     var rosterCsvChoice by remember { mutableStateOf<String?>(null) } // !=null: 勤務表/希望 取込選択ダイアログ
     var pendingCsvImport by remember { mutableStateOf<String?>(null) } // !=null: 取込種別の選択ダイアログ
@@ -407,8 +407,8 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                 }
                 2 -> {
                     SetupGuideCard(ui, vm)
-                    // [Web反映] 毎月変える「月次」と、たまにしか触らない「年次マスター」を分けて誤編集を防ぐ。
-                    MagiSegmentedControl(options = listOf("月次（毎月）", "シフト希望", "年次マスター"), selected = editScope, onSelect = { editScope = it })
+                    // [Web反映] 毎月触る「今月の調整/シフト希望」と、たまにしか触らない「基本マスター」を分けて誤編集を防ぐ。
+                    MagiSegmentedControl(options = listOf("今月の調整", "シフト希望", "基本マスター"), selected = editScope, onSelect = { editScope = it })
                     when (editScope) {
                         0 -> {
                             MonthPickerCard(ui, vm)
@@ -422,28 +422,49 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                         }
                         else -> {
                             Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
-                                Text("制度・人員が変わったときだけ編集してください。毎月の調整は「月次」へ。",
+                                Text("毎月は変わらない土台です。制度や人の入れ替えのときだけ触ってください。毎月の調整は「今月の調整」「シフト希望」へ。",
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                                     style = MaterialTheme.typography.bodyMedium)
                             }
-                            // [E6案A] 年次の長大スクロールを、不要カードを畳んで削減。基本情報のみ既定で展開。
-                            //   展開状態は CollapsibleSection 内の rememberSaveable で保持(回転/再構成に耐える)。
-                            CollapsibleSection("基本情報（シフト・グループ・スタッフ）", "yr_ws1", initiallyExpanded = true) { Ws1Card(ui, vm) }
-                            // [冗長性B] 旧「回数設定」節を撤去。apt は基本情報、個人上下限は「個人の回数」に一本化。
-                            CollapsibleSection("スキルグループ", "yr_skillg") { SkillGroupCard(ui, vm) }
-                            CollapsibleSection("スキルのルール（C41s・C42s）", "yr_skillc") { SkillConstraintsCard(ui, vm) }
-                            // [発見性] cons41(群の1日人数)/cons42(組み合わせ禁止)を、スキル版(C41s/C42s)と対称な専用節に。
-                            CollapsibleSection("グループのルール（C41 1日の人数・C42 組み合わせ禁止）", "yr_groupc") {
-                                ConstraintsCard(ui, vm, title = "",
-                                    keys = setOf("cons41", "cons42"))
+                            // [E6案A] 長大スクロールを畳んで削減。①のみ既定で展開。展開状態は rememberSaveable で保持。
+                            CollapsibleSection("① シフト・グループ・スタッフ", "yr_ws1", initiallyExpanded = true) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SectionNote("勤務の種類・グループ分け・スタッフを登録し、どのグループがどの勤務に入れるかを決めます。ここがすべての土台です。")
+                                    Ws1Card(ui, vm)
+                                }
                             }
-                            CollapsibleSection("ルール（並び・窓）", "yr_cons") {
-                                ConstraintsCard(ui, vm, title = "",
-                                    keys = setOf("cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn"))
+                            CollapsibleSection("② スキルグループ", "yr_skillg") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SectionNote("資格や対応できる業務などの“スキル”でまとめる単位です。勤務のグループとは別の切り口で分けます（例：採血できる人・リーダーできる人）。")
+                                    SkillGroupCard(ui, vm)
+                                }
                             }
-                            CollapsibleSection("個人の回数（下限/上限）", "yr_range") { StaffRangeCard(ui, vm) }
-                            CollapsibleSection("グループ単位の回数（一括）", "yr_grange") { GroupRangeCard(ui, vm) }
+                            // ③ 回数（1人あたり）★統合: 目標(apt) ＋ 個人の下限上限(ws5) ＋ グループ一括
+                            CollapsibleSection("③ 回数（1人あたり）", "yr_count") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SectionNote("1人がその勤務へ1か月に何回入るかを調整します。『目標』は近づけたい回数（やわらかい）、『下限/上限』は必ず守る回数（かたい）。グループまとめての一括設定もできます。")
+                                    AptCard(ui, vm)
+                                    StaffRangeCard(ui, vm)
+                                    GroupRangeCard(ui, vm)
+                                }
+                            }
+                            // ④ 人数と組み合わせ ★統合: グループ(C41/C42) ＋ スキルグループ(C41s/C42s)
+                            CollapsibleSection("④ 人数と組み合わせ", "yr_headcount") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SectionNote("その日その勤務に最低／最高で何人いるか（人数）と、同じ日に一緒に入れない組み合わせ（禁止ペア）を設定します。グループ単位とスキルグループ単位の両方を扱えます。")
+                                    ConstraintsCard(ui, vm, title = "グループ単位（C41 人数・C42 禁止ペア）",
+                                        keys = setOf("cons41", "cons42"))
+                                    SkillConstraintsCard(ui, vm)
+                                }
+                            }
+                            CollapsibleSection("⑤ 並び・くり返し", "yr_cons") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SectionNote("勤務の並び方のルールです。『○日間で△回まで』の間隔、月の合計回数、『この並びは必須／禁止／並び希望／並び回避』のパターンを設定します。")
+                                    ConstraintsCard(ui, vm, title = "",
+                                        keys = setOf("cons1", "cons2", "cons3", "cons3n", "cons3m", "cons3mn"))
+                                }
+                            }
                         }
                     }
                 }
