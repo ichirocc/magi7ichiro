@@ -1164,20 +1164,46 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
      *  apt は「最低=最高」の単一値のときのみ設定（範囲指定や空欄時はクリア）＝Excelの ws1 C→ws5 展開を1操作で再現。 */
     fun setGroupRange(g: Int, k: Int, lo: String, hi: String) {
         val st0 = state ?: return
-        if (g !in st0.groups.indices) return
+        val members = st0.staff.indices.filter { st0.staff[it].groupIdx == g }
+        if (members.isEmpty()) return
         val loT = lo.trim(); val hiT = hi.trim()
-        // [2層レンジ] グループ既定レンジ groupRange["g,k"] に書く。個人レンジ(staffRange)は上書きしない＝別保存。
-        //   有効レンジは Problem 構築時に「個人[i,k] が在ればそれ、無ければグループ[g,k]」で合成（個人優先）。
-        val gm = st0.groupRange.toMutableMap()
-        val gkey = "$g,$k"
-        if (loT.isBlank() && hiT.isBlank()) gm.remove(gkey) else gm[gkey] = Range(loT, hiT)
-        // ws1 C: グループ別 適切回数（弱い目標）。単一値(最低=最高)のときのみ設定、範囲/空欄はクリア。
-        val aptVal = if (loT.isNotBlank() && loT == hiT) loT else ""
-        val stNew = Ws1Ops.setGroupApt(st0.copy(groupRange = gm), g, k, aptVal)
+        if (loT.isBlank() && hiT.isBlank()) return
+        // [共有ws5・スキップ方式] ws5(個人レンジ)へ直接書く。ただし既に個人値が在るメンバーは上書きせず保持する。
+        //   ※同一保存先のため、適用後の値は個人値と区別がつかない→グループ範囲の後からの一括変更は不可
+        //     （変更したい場合は対象のws5を一旦クリアして再適用）。Web/VBAの「ws5のみ」と厳密一致。
+        val m = st0.staffRange.toMutableMap()
+        var wrote = 0; var skipped = 0
+        for (i in members) {
+            val key = "$i,$k"
+            val ex = m[key]
+            if (ex != null && (ex.lo.isNotBlank() || ex.hi.isNotBlank())) { skipped++; continue }
+            m[key] = Range(loT, hiT); wrote++
+        }
+        // ws1 C: グループ別 適切回数（弱い目標）。単一値(最低=最高)のときのみ設定。
+        val aptVal = if (loT == hiT) loT else ""
+        val stNew = Ws1Ops.setGroupApt(st0.copy(staffRange = m), g, k, aptVal)
         val gname = st0.groups.getOrNull(g)?.name ?: "#$g"
-        val mc = st0.staff.count { it.groupIdx == g }
-        val desc = if (loT.isBlank() && hiT.isBlank()) "削除" else "${loT.ifBlank { "?" }}〜${hiT.ifBlank { "?" }}"
-        logOp("I", "グループ既定レンジ: $gname ${opSy(k)} → $desc / 適切回数=${aptVal.ifBlank { "なし" }} (${mc}名・個人レンジは別保持)")
+        logOp("I", "グループ一括: $gname ${opSy(k)} → ws5=${loT.ifBlank { "?" }}〜${hiT.ifBlank { "?" }} (書込${wrote}名/スキップ${skipped}名・既存個人値は保持)")
+        applyStructure(stNew)
+    }
+
+    /** [共有ws5・スキップ方式] グループ既定の解除: 表示中レンジ(lo,hi)と一致するメンバーのws5だけ削除する。
+     *  個人で別値にした職員(レンジが違う)は保持する。サマリの×から呼ぶ。 */
+    fun clearGroupRange(g: Int, k: Int, lo: String, hi: String) {
+        val st0 = state ?: return
+        val members = st0.staff.indices.filter { st0.staff[it].groupIdx == g }
+        if (members.isEmpty()) return
+        val loT = lo.trim(); val hiT = hi.trim()
+        val m = st0.staffRange.toMutableMap()
+        var cleared = 0
+        for (i in members) {
+            val key = "$i,$k"; val r = m[key] ?: continue
+            if (r.lo.trim() == loT && r.hi.trim() == hiT) { m.remove(key); cleared++ }
+        }
+        if (cleared == 0) return
+        val stNew = Ws1Ops.setGroupApt(st0.copy(staffRange = m), g, k, "")
+        val gname = st0.groups.getOrNull(g)?.name ?: "#$g"
+        logOp("I", "グループ既定解除: $gname ${opSy(k)} → ${cleared}名のws5削除（個人別値は保持）")
         applyStructure(stNew)
     }
 
@@ -1188,18 +1214,25 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     fun groupRangeSummary(): List<GroupRangeView> {
         val st = state ?: return emptyList()
         val out = mutableListOf<GroupRangeView>()
-        // [2層レンジ] groupRange を直接読む（推定不要・正確）。shared=個人レンジで上書きしていない(=グループ既定を
-        //   実際に使う)メンバー数。members=グループ総数。全員既定なら(M名)、一部が個人上書きなら(N/M名)表示。
-        for ((key, r) in st.groupRange) {
-            val p = key.split(',')
-            val g = p.getOrNull(0)?.toIntOrNull() ?: continue
-            val k = p.getOrNull(1)?.toIntOrNull() ?: continue
-            if (g !in st.groups.indices || k !in st.shifts.indices) continue
-            if (r.lo.isBlank() && r.hi.isBlank()) continue
-            val memberIdx = st.staff.indices.filter { st.staff[it].groupIdx == g }
-            if (memberIdx.isEmpty()) continue
-            val usingDefault = memberIdx.count { st.staffRange["$it,$k"] == null }
-            out.add(GroupRangeView(g, k, st.groups[g].name, st.shifts[k].kigou, r.lo, r.hi, memberIdx.size, usingDefault))
+        st.groups.forEachIndexed { g, gr ->
+            val members = st.staff.indices.filter { st.staff[it].groupIdx == g }
+            if (members.isEmpty()) return@forEachIndexed
+            st.shifts.forEachIndexed { k, sh ->
+                // [緩和] メンバーの非空レンジを (lo,hi) で集計し、最多共有レンジを代表として出す。完全一致で
+                //   なくても「2名以上が共有」なら表示し N/M名 を添える。これにより一括適用後に一部メンバーを
+                //   個別編集しても、グループ単位のレンジが消えずに残って見える（旧実装は全員一致のみ表示）。
+                val counts = HashMap<Pair<String, String>, Int>()
+                for (i in members) {
+                    val r = st.staffRange["$i,$k"] ?: continue
+                    if (r.lo.isBlank() && r.hi.isBlank()) continue
+                    val key = r.lo to r.hi
+                    counts[key] = (counts[key] ?: 0) + 1
+                }
+                val best = counts.maxByOrNull { it.value }
+                if (best != null && (best.value >= 2 || members.size == 1)) {
+                    out.add(GroupRangeView(g, k, gr.name, sh.kigou, best.key.first, best.key.second, members.size, best.value))
+                }
+            }
         }
         return out.sortedWith(compareBy({ it.g }, { it.k }))
     }

@@ -202,14 +202,15 @@ fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "グループ単位でシフトの回数の上下限(グループ既定)を設定します。同じグループの全職員に効きますが、個人の回数で個別に設定した職員はそちらが優先されます。最低=最高の単一値ならグループ別の適切回数(ws1 C)も同時に設定します。",
+                "グループ単位でシフトの回数を一括設定します（個人レンジ ws5 に書込み）。既に個人で設定済みの職員は上書きせず保持します。最低=最高の単一値ならグループ別の適切回数(ws1 C)も同時に設定します。",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // [一覧] グループ既定レンジ(groupRange)を表示。個人レンジで個別設定した職員はそちらが優先。×=グループ既定を削除。
+            // [適用済み一覧] 一括適用したグループ上下限(全メンバー同一レンジ)を表示。各メンバーの個人の回数にも
+            //   展開済みだが、ここでグループ単位に集約して確認・削除できるようにする。×=全員分クリア。
             val applied = vm.groupRangeSummary()
             if (applied.isNotEmpty()) {
-                Text("適用中のグループ既定（${applied.size}件・個人レンジが優先）",
+                Text("適用中のグループ上下限（${applied.size}件・個人の回数にも展開済み）",
                     style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     applied.forEach { gr ->
@@ -226,7 +227,7 @@ fun GroupRangeCard(ui: UiState, vm: MagiViewModel) {
                             label = { Text("${gr.groupName}·${gr.kigou} $rangeLab（${if (gr.shared >= gr.members) "${gr.members}" else "${gr.shared}/${gr.members}"}名）") },
                             trailingIcon = {
                                 Icon(Icons.Filled.Close, contentDescription = "削除",
-                                    modifier = Modifier.size(18.dp).clickable(enabled = !ui.running) { vm.setGroupRange(gr.g, gr.k, "", "") })
+                                    modifier = Modifier.size(18.dp).clickable(enabled = !ui.running) { vm.clearGroupRange(gr.g, gr.k, gr.lo, gr.hi) })
                             },
                         )
                     }

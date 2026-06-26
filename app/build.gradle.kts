@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 135
-        versionName = "3.26.0-group-range-layer"
+        versionCode = 136
+        versionName = "3.27.0-group-range-skip-ws5"
     }
 
     buildTypes {

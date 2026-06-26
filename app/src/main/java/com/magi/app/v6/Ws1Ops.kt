@@ -222,7 +222,6 @@ object Ws1Ops {
             needDay1 = reindexKeys(state.needDay1, 0, k),
             needDay2 = reindexKeys(state.needDay2, 0, k),
             staffRange = reindexKeys(state.staffRange, 1, k),
-            groupRange = reindexKeys(state.groupRange, 1, k),
         )
         return Ws1Result(withSchedule(ns, newSched), newSched)
     }
@@ -261,7 +260,6 @@ object Ws1Ops {
             }
             if (ni == s.groupIdx) s else Staff(s.name, ni, s.skillIdx)
         }
-        return state.copy(groups = groups, groupShift = gs, groupShiftApt = apt, staff = staff,
-            groupRange = reindexKeys(state.groupRange, 0, g))
+        return state.copy(groups = groups, groupShift = gs, groupShiftApt = apt, staff = staff)
     }
 }

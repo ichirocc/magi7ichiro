@@ -82,23 +82,13 @@ class Problem(val state: MagiState) {
 
         rangeLo = Array(S) { IntArray(K) { Int.MIN_VALUE } }
         rangeHi = Array(S) { IntArray(K) { Int.MAX_VALUE } }
-        // [2層レンジ] (1) まずグループ既定レンジ groupRange["g,k"] を全メンバーへ展開（既定層）。
-        for (i in 0 until S) {
-            val g = sgrp[i]
-            for (k in 0 until K) {
-                val gr = state.groupRange["$g,$k"] ?: continue
-                gr.lo.trim().toIntOrNull()?.let { rangeLo[i][k] = it }
-                gr.hi.trim().toIntOrNull()?.let { rangeHi[i][k] = it }
-            }
-        }
-        // (2) 個人レンジ staffRange["i,k"] が在るセルはグループ既定を完全置換（個人優先・per-cell。空欄端=無制限）。
         for ((key, r) in state.staffRange) {
             val p = key.split(',')
             val i = p.getOrNull(0)?.toIntOrNull() ?: continue
             val k = p.getOrNull(1)?.toIntOrNull() ?: continue
             if (i in 0 until S && k in 0 until K) {
-                rangeLo[i][k] = r.lo.trim().toIntOrNull() ?: Int.MIN_VALUE
-                rangeHi[i][k] = r.hi.trim().toIntOrNull() ?: Int.MAX_VALUE
+                r.lo.trim().toIntOrNull()?.let { rangeLo[i][k] = it }
+                r.hi.trim().toIntOrNull()?.let { rangeHi[i][k] = it }
             }
         }
 
