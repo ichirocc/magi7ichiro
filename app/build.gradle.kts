@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 140
-        versionName = "3.31.0-pro-hide-redundant-notes"
+        versionCode = 141
+        versionName = "3.32.0-dialog-buttons-onefinger"
     }
 
     buildTypes {

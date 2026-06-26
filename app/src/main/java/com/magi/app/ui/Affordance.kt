@@ -1,10 +1,14 @@
 package com.magi.app.ui
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -50,26 +54,31 @@ fun DeleteRowButton(onClick: () -> Unit, enabled: Boolean = true, text: String =
     ) { Text(text) }
 }
 
-/** ダイアログの確定（肯定の主操作）: 塗りボタン。 */
+/** ダイアログの確定（肯定の主操作）: 塗りボタン。一本指向けに最低48dp高。 */
 @Composable
 fun DialogConfirmButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Button(onClick = onClick, enabled = enabled) { Text(text) }
+    Button(onClick = onClick, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(text) }
 }
 
-/** ダイアログの取消/閉じる: 外枠ボタン。 */
+/** ダイアログの取消/閉じる: 外枠ボタン。一本指向けに最低48dp高。 */
 @Composable
 fun DialogDismissButton(onClick: () -> Unit, text: String = "キャンセル") {
-    OutlinedButton(onClick = onClick) { Text(text) }
+    OutlinedButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text(text) }
 }
 
-/** ダイアログの破壊的確定（削除など）: エラー色の塗りボタン。 */
+/** ダイアログの破壊的確定（削除など）: エラー色＋警告アイコンで誤タップを抑止。最低48dp高。 */
 @Composable
 fun DialogDangerButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(
         onClick = onClick, enabled = enabled,
+        modifier = Modifier.heightIn(min = 48.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.error,
             contentColor = MaterialTheme.colorScheme.onError,
         ),
-    ) { Text(text) }
+    ) {
+        Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text)
+    }
 }
