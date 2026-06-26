@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 139
-        versionName = "3.30.0-fair-in-breakdown"
+        versionCode = 140
+        versionName = "3.31.0-pro-hide-redundant-notes"
     }
 
     buildTypes {

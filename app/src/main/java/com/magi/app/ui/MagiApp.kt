@@ -477,11 +477,11 @@ fun MagiApp(vm: MagiViewModel = viewModel(), themeMode: Int = 0, onThemeMode: (I
                     // [プロ編集] プロ表示モードのときは数値診断（V6 1ヶ月俯瞰・生指標）を前面に出す。
                     if (proMode) V6DashboardCard(ui.v6)
                     if (proMode) WeightTableCard()   // [N2/⛏11] スコアの重み根拠（最適化器と一致）
-                    OverviewDashboard(ui)
-                    CheckSummaryView(ui)
-                    BreakdownCard(ui, onFocusStaff = { vm.findFixSuggestions(it) })
-                    BottleneckCard(ui)
-                    FixSuggestionCard(ui, onSearch = { vm.findFixSuggestions(null) }, onApply = { vm.applyFixSuggestion(it) })
+                    OverviewDashboard(ui, proMode)
+                    CheckSummaryView(ui, proMode)
+                    BreakdownCard(ui, onFocusStaff = { vm.findFixSuggestions(it) }, proMode = proMode)
+                    BottleneckCard(ui, proMode)
+                    FixSuggestionCard(ui, onSearch = { vm.findFixSuggestions(null) }, onApply = { vm.applyFixSuggestion(it) }, proMode = proMode)
                     // [校正] 開発用の ColorSettingsView（英語名・生の制約コード/WARN/CRITICAL露出）と
                     // FlagsView（実験フラグ）は一般ユーザー画面から除外。詳細設定は上級者向けに別途。
                 }

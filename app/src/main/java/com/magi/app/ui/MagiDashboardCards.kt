@@ -592,7 +592,7 @@ internal fun breakdownLocations(famKey: String, ui: UiState): List<Pair<String, 
  * を職員ごと、needViolations(シフト×日)を日ごとに件数集計し多い順に上位を提示。データ・重み不変。
  */
 @Composable
-internal fun BottleneckCard(ui: UiState) {
+internal fun BottleneckCard(ui: UiState, proMode: Boolean = false) {
     if (ui.countViolations.isEmpty() && ui.needViolations.isEmpty()) return
     fun nm(i: Int) = ui.staffNames.getOrNull(i) ?: "#$i"
     val perStaff = HashMap<Int, Int>()
@@ -609,7 +609,7 @@ internal fun BottleneckCard(ui: UiState) {
     val topDay = perDay.entries.sortedByDescending { it.value }.take(5)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("ボトルネック（しわ寄せの集中箇所）", style = MaterialTheme.typography.titleMedium)
+            Text(if (proMode) "ボトルネック" else "ボトルネック（しわ寄せの集中箇所）", style = MaterialTheme.typography.titleMedium)
             Text(
                 "違反が集中している職員・日です。ここの設定（担当範囲・希望・必要人数）を見直すと全体が解けやすくなります。",
                 style = MaterialTheme.typography.labelMedium,
@@ -634,7 +634,7 @@ internal fun BottleneckCard(ui: UiState) {
 }
 
 @Composable
-internal fun BreakdownCard(ui: UiState, onFocusStaff: (Int) -> Unit = {}) {
+internal fun BreakdownCard(ui: UiState, onFocusStaff: (Int) -> Unit = {}, proMode: Boolean = false) {
     val labels = breakdownLabels
     var criticalOnly by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -647,14 +647,15 @@ internal fun BreakdownCard(ui: UiState, onFocusStaff: (Int) -> Unit = {}) {
                 Spacer(Modifier.width(6.dp))
                 Switch(checked = criticalOnly, onCheckedChange = { criticalOnly = it })
             }
-            // [明確性I1] チップの数値は「ペナルティ量」（不足/超過の合計・並び違反の発火数）で、
-            //   違反したセルの「件数」とは一致しない。実際の場所はチップをタップして確認する。
-            Text("数値はペナルティの大きさ（不足・超過の合計や並び違反の回数）。タップで実際の場所（セル）を表示します。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BreakdownGroup("必須（満たすべき）", listOf("groupViol", "pref", "covU", "c3n"), 2, ui, labels, expanded, onTapChip)
+            // [明確性I1] チップの数値は「ペナルティ量」。熟練者向けプロ表示では注記を省く。
+            if (!proMode) {
+                Text("数値はペナルティの大きさ（不足・超過の合計や並び違反の回数）。タップで実際の場所（セル）を表示します。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            BreakdownGroup(if (proMode) "必須" else "必須（満たすべき）", listOf("groupViol", "pref", "covU", "c3n"), 2, ui, labels, expanded, onTapChip)
             if (!criticalOnly) {
                 BreakdownGroup("人数の範囲", listOf("low", "high", "apt"), 1, ui, labels, expanded, onTapChip)
-                BreakdownGroup("任意（できれば）", listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covO", "fair"), 0, ui, labels, expanded, onTapChip)
+                BreakdownGroup(if (proMode) "任意" else "任意（できれば）", listOf("c1", "c2", "c3", "c3m", "c3mn", "c41", "c42", "c41s", "c42s", "covO", "fair"), 0, ui, labels, expanded, onTapChip)
             }
             expanded?.let { key ->
                 val cs = MaterialTheme.colorScheme
@@ -764,7 +765,7 @@ private fun fixKindTag(k: com.magi.app.v6.FixKind): Pair<String, androidx.compos
 }
 
 @Composable
-internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.magi.app.v6.FixSuggestion) -> Unit) {
+internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.magi.app.v6.FixSuggestion) -> Unit, proMode: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -777,8 +778,10 @@ internal fun FixSuggestionCard(ui: UiState, onSearch: () -> Unit, onApply: (com.
                     TextButton(onClick = onSearch) { Text(if (ui.fixSuggestions.isEmpty()) "探す" else "全体で再探索") }
                 }
             }
-            Text("違反を減らす1手を効果順に提案します。「変更」は1マスを別の勤務に、「交換」は2人の同日を入れ替えます。",
-                style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            if (!proMode) {
+                Text("違反を減らす1手を効果順に提案します。「変更」は1マスを別の勤務に、「交換」は2人の同日を入れ替えます。",
+                    style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            }
             when {
                 ui.fixSearching -> Text("候補を探しています。少しお待ちください。", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 ui.fixSuggestions.isEmpty() -> Text("候補がありません。「探す」を押すか、上の違反の場所をタップしてください。\n※1手で直せない違反（下限が競合する等の構造的不足）は、設定(ws1)の見直しが根本解です。",

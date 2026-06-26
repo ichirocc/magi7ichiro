@@ -107,10 +107,10 @@ fun RingGauge(label: String, value: Int, max: Int, modifier: Modifier = Modifier
 }
 
 @Composable
-fun OverviewDashboard(ui: UiState) {
+fun OverviewDashboard(ui: UiState, proMode: Boolean = false) {
     // [D2] 「守れない約束(HARD件数)」は直下の CheckSummaryView が言葉で示すため、ここの重複リングを廃止。
     //   別指標の「気になる点(総違反)」「注意の日(高リスク日)」のみ表示し、HARDの三重表示を解消。
-    SectionSegment("ようす（俯瞰）", "気になる点・注意したい日") {
+    SectionSegment(if (proMode) "ようす" else "ようす（俯瞰）", if (proMode) null else "気になる点・注意したい日") {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             RingGauge("気になる点", ui.totalViolations, (ui.staff * ui.days).coerceAtLeast(1), Modifier.weight(1f))
             RingGauge("注意の日", ui.v6?.highRiskDays ?: 0, ui.days.coerceAtLeast(1), Modifier.weight(1f))
@@ -119,9 +119,9 @@ fun OverviewDashboard(ui: UiState) {
 }
 
 @Composable
-fun CheckSummaryView(ui: UiState) {
-    SectionSegment("チェック概要", "問題がないかの確認") {
-        val status = if (ui.bestHard == 0L) "配れます（守るべき約束はすべて守れています）" else "もう少し（守れていない約束 ${ui.bestHard}）"
+fun CheckSummaryView(ui: UiState, proMode: Boolean = false) {
+    SectionSegment("チェック概要", if (proMode) null else "問題がないかの確認") {
+        val status = if (ui.bestHard == 0L) (if (proMode) "配れます" else "配れます（守るべき約束はすべて守れています）") else (if (proMode) "未解決 ${ui.bestHard}" else "もう少し（守れていない約束 ${ui.bestHard}）")
         Text(status, fontWeight = FontWeight.Bold,
             color = if (ui.bestHard == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         // [校正] 生の操作ログは「ようす」に出さない（B2 平易/ B8 最小限）。詳細はログ＝詳細設定の「操作ログ」へ集約。
