@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 143
-        versionName = "3.34.0-unify-sheets-pickers"
+        versionCode = 144
+        versionName = "3.35.0-unify-remaining-buttons"
     }
 
     buildTypes {

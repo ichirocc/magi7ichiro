@@ -1120,8 +1120,8 @@ internal fun WishBulkSheet(ui: UiState, vm: MagiViewModel, presetWeekday: Int, o
     if (confirmClearAll) {
         AlertDialog(
             onDismissRequest = { confirmClearAll = false },
-            confirmButton = { TextButton(onClick = { confirmClearAll = false; vm.clearAllWishes(); onDismiss() }) { Text("すべて削除", color = cs.error) } },
-            dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("キャンセル") } },
+            confirmButton = { DialogDangerButton("すべて削除", onClick = { confirmClearAll = false; vm.clearAllWishes(); onDismiss() }) },
+            dismissButton = { DialogDismissButton(onClick = { confirmClearAll = false }) },
             title = { Text("すべての希望を削除") },
             text = { Text("登録済みの希望をすべて削除します。割当には影響しません。元に戻すで復元できます。") },
         )
@@ -1310,9 +1310,9 @@ internal fun TallyCard(ui: UiState, vm: MagiViewModel, onFix: (Int?, Int?) -> Un
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { val f = d.focus; val sh = d.shift; detail = null; onFix(f, sh) }) { Text("直し方を探す") }
+                        DialogConfirmButton("直し方を探す", onClick = { val f = d.focus; val sh = d.shift; detail = null; onFix(f, sh) })
                     },
-                    dismissButton = { TextButton(onClick = { detail = null }) { Text("閉じる") } },
+                    dismissButton = { DialogDismissButton(onClick = { detail = null }, text = "閉じる") },
                 )
             }
         }
