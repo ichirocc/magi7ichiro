@@ -230,6 +230,9 @@ def picker():
     d.rounded_rectangle([0, sy, W, dp(760)+dp(28)], radius=dp(28), fill=C["surface"])
     rrect(d, W//2-dp(18), sy+dp(10), dp(36), dp(5), 3, C["outline"])
     text(d, dp(20), sy+dp(28), "佐藤 美和 ・ 12日 のシフト", 17, C["onSurface"], True)
+    _xx = W - dp(46); _xy = sy + dp(28)
+    d.line([_xx, _xy, _xx + dp(18), _xy + dp(18)], fill=C["onSurfaceVariant"], width=dp(2))
+    d.line([_xx + dp(18), _xy, _xx, _xy + dp(18)], fill=C["onSurfaceVariant"], width=dp(2))
     text(d, dp(20), sy+dp(56), "担当できるシフトから選んでください（指1本・親指届く下段）", 12, C["onSurfaceVariant"])
     tiles = [("日","#22C55E",True),("夜","#F59E0B",False),("明","#A855F7",False),
              ("休","#9CA3AF",False),("有","#3B82F6",False),("P","#EC4899",False)]
@@ -403,69 +406,64 @@ def month_matrix():
 
 # ===== 9. 編集（希望の反映 / 一覧） =========================================
 def edit():
-    H = dp(760); img, d = new_canvas(760)
+    H = dp(740); img, d = new_canvas(740)
     topbar(d, "要確認", C["amberBg"], C["amberFg"])
     x, y, w = dp(16), dp(70), W - dp(32)
-    ch = dp(160); card(d, x, y, w, ch)
-    text(d, x + dp(16), y + dp(14), "希望シフトの反映", 17, C["onSurface"], True)
-    text(d, x + dp(16), y + dp(44), "希望 93 件のうち担当可能な 84 件を勤務表へ反映します。", 12, C["onSurfaceVariant"], maxw=w - dp(32))
-    text(d, x + dp(16), y + dp(68), "担当外の希望 9 件は反映されません（要確認）。", 12, C["error"], maxw=w - dp(32))
-    rrect(d, x + dp(16), y + dp(100), w - dp(32), dp(48), 16, C["primary"])
-    center(d, x + w // 2, y + dp(114), "希望を反映する", 15, C["onPrimary"], True)
-    y += ch + dp(14)
-    lh = dp(346); card(d, x, y, w, lh)
-    text(d, x + dp(16), y + dp(14), "希望の一覧", 17, C["onSurface"], True)
-    ly = y + dp(44)
-    rows = [("#22C55E", "佐藤 美和", "12日 / 日勤を希望", "反映可", C["aGreen"]),
-            ("#F59E0B", "古泉 健一", "18日 / 夜勤を希望", "反映可", C["aGreen"]),
-            ("#EF4444", "山本 昌幸", "4日 / A1を希望", "担当外", C["aRed"]),
-            ("#3B82F6", "鈴木 隆", "22日 / 有給を希望", "反映可", C["aGreen"]),
-            ("#EF4444", "中村 茜", "31日 / A4を希望", "担当外", C["aRed"])]
-    for ic, nm, sub, tag, tc in rows:
-        ly += listrow(d, x + dp(16), ly, w - dp(32), ic, nm, sub, tag, tc)
-    bottom_bars(d, H, 2, "▶  最適化する")
+    y += segmented(d, x, y, w, ["今月の調整", "シフト希望", "基本マスター"], 2) + dp(10)
+    rrect(d, x, y, w, dp(42), 14, C["amberBg"])
+    text(d, x + dp(14), y + dp(12), "制度・人員が変わったときだけ編集します。", 12, C["amberFg"], maxw=w - dp(28))
+    y += dp(42) + dp(10)
+    secs = [("\u25bc  \u2460 \u30b7\u30d5\u30c8\u30fb\u30b0\u30eb\u30fc\u30d7\u30fb\u30b9\u30bf\u30c3\u30d5", "勤務の種類・グループ・職員を追加/編集"),
+            ("\u25b6  \u2461 \u30b9\u30ad\u30eb\u30b0\u30eb\u30fc\u30d7", "似た技能をまとめる"),
+            ("\u25b6  \u2462 回数（1人あたり）", "目標・個人の下限上限・グループ一括"),
+            ("\u25b6  \u2463 人数と組み合わせ", "1日の必要数・禁止ペア（C41 / C42）"),
+            ("\u25b6  \u2464 並び・くり返し", "連続や間隔のルール（並び希望 / 並び回避 ほか）")]
+    for title, note in secs:
+        rh = dp(62); card(d, x, y, w, rh)
+        text(d, x + dp(16), y + dp(13), title, 14, C["onSurface"], True)
+        text(d, x + dp(16), y + dp(38), note, 11, C["onSurfaceVariant"], maxw=w - dp(32))
+        y += rh + dp(8)
+    bottom_bars(d, H, 2, "\u25b6  最適化する")
     return img
 
 # ===== 10. 分析（ゲージ＋統計＋リスク＋内訳） ================================
 def analysis():
-    H = dp(860); img, d = new_canvas(860)
-    topbar(d, "要確認", C["amberBg"], C["amberFg"])
+    H = dp(880); img, d = new_canvas(880)
+    topbar(d, "配布可", C["tertiaryContainer"], C["onTertiaryContainer"])
     x, y, w = dp(16), dp(70), W - dp(32)
-    ch = dp(540); card(d, x, y, w, ch)
-    text(d, x + dp(16), y + dp(14), "分析", 17, C["onSurface"], True)
-    center(d, x + w // 2, y + dp(44), "92", 34, C["tertiary"], True)
-    center(d, x + w // 2, y + dp(90), "/ 100", 13, C["onSurfaceVariant"])
-    rrect(d, x + dp(24), y + dp(114), w - dp(48), dp(8), 4, C["surfaceVariant"])
-    rrect(d, x + dp(24), y + dp(114), int((w - dp(48)) * 0.92), dp(8), 4, C["tertiary"])
-    center(d, x + w // 2, y + dp(130), "人員充足率（必要240のうち充足）", 12, C["onSurface"])
-    sw = (w - dp(32) - dp(20)) // 3; sy = y + dp(158)
-    bigstat(d, x + dp(16), sy, sw, "1", "必須(HARD)", C["error"])
-    bigstat(d, x + dp(16) + sw + dp(10), sy, sw, "0", "担当外", C["onSurface"])
-    bigstat(d, x + dp(16) + 2 * (sw + dp(10)), sy, sw, "92%", "充足", C["tertiary"])
-    ry = sy + dp(88)
-    text(d, x + dp(16), ry, "日別リスク", 13, C["onSurface"], True)
-    risks = [("月", 0), ("火", 0), ("水", 1), ("木", 0), ("金", 2), ("土", 0), ("日", 0)]
-    cxp = x + dp(16); ry2 = ry + dp(22)
-    for lab, sh in risks:
-        if sh <= 0: bg, fg = C["tertiaryContainer"], C["onTertiaryContainer"]
-        elif sh == 1: bg, fg = C["amberBg"], C["amberFg"]
-        else: bg, fg = C["errorContainer"], C["onErrorContainer"]
-        cww = dp(42); rrect(d, cxp, ry2, cww, dp(40), 14, bg)
-        center(d, cxp + cww // 2, ry2 + dp(4), lab, 10, fg)
-        center(d, cxp + cww // 2, ry2 + dp(20), ("不足%d" % sh) if sh > 0 else "OK", 9, fg, True)
-        cxp += cww + dp(4)
-    by = ry2 + dp(60); text(d, x + dp(16), by, "違反の内訳", 13, C["onSurface"], True)
-    brows = [("希望不一致", 9, C["errorContainer"], C["onErrorContainer"]),
-             ("必要人数との差", 12, C["errorContainer"], C["onErrorContainer"]),
-             ("連続パターン", 89, C["amberBg"], C["amberFg"]),
-             ("個人別回数範囲", 4, C["surfaceVariant"], C["onSurfaceVariant"])]
-    byy = by + dp(22)
-    for lab, val, bg, fg in brows:
-        rrect(d, x + dp(16), byy, w - dp(32), dp(24), 12, bg)
-        text(d, x + dp(28), byy + dp(4), lab, 12, fg)
-        text(d, x + w - dp(28), byy + dp(4), str(val), 12, fg, True, anchor="ra")
-        byy += dp(28)
-    bottom_bars(d, H, 3, "▶  最適化する")
+    y += segmented(d, x, y, w, ["一般", "プロ"], 0) + dp(10)
+    # ようす（gauge）
+    ch = dp(178); card(d, x, y, w, ch)
+    text(d, x + dp(16), y + dp(14), "ようす（俯瞰）", 15, C["onSurface"], True)
+    center(d, x + w // 2, y + dp(50), "100", 30, C["tertiary"], True)
+    center(d, x + w // 2, y + dp(92), "/ 100", 12, C["onSurfaceVariant"])
+    rrect(d, x + dp(24), y + dp(116), w - dp(48), dp(8), 4, C["surfaceVariant"])
+    rrect(d, x + dp(24), y + dp(116), (w - dp(48)), dp(8), 4, C["tertiary"])
+    center(d, x + w // 2, y + dp(132), "人員充足率（必要240を充足）", 12, C["onSurface"])
+    y += ch + dp(10)
+    # チェック概要
+    ch2 = dp(58); card(d, x, y, w, ch2)
+    text(d, x + dp(16), y + dp(12), "チェック概要", 13, C["onSurface"], True)
+    text(d, x + dp(16), y + dp(33), "配れます（守るべき約束はすべて守れています）", 12, C["tertiary"], True)
+    y += ch2 + dp(10)
+    # 違反の内訳（3群・全18種=100%）
+    bh = dp(300); card(d, x, y, w, bh)
+    text(d, x + dp(16), y + dp(14), "違反の内訳", 14, C["onSurface"], True)
+    text(d, x + w - dp(16), y + dp(16), "全18種を表示（100%）", 11, C["onSurfaceVariant"], anchor="ra")
+    gy = y + dp(44)
+    groups = [("必須（満たすべき）", [("希望不一致", 0, True), ("人数不足", 0, True)]),
+              ("人数の範囲", [("下限割れ", 0, True), ("目標とのズレ", 3, False)]),
+              ("任意（できれば）", [("連続パターン", 7, False), ("公平化のズレ", 6, False)])]
+    for gname, items in groups:
+        text(d, x + dp(16), gy, gname, 12, C["onSurface"], True); gy += dp(22)
+        for lab, val, okv in items:
+            bg, fg = (C["tertiaryContainer"], C["onTertiaryContainer"]) if okv else (C["amberBg"], C["amberFg"])
+            rrect(d, x + dp(16), gy, w - dp(32), dp(24), 12, bg)
+            text(d, x + dp(28), gy + dp(4), lab, 12, fg)
+            text(d, x + w - dp(28), gy + dp(4), str(val), 12, fg, True, anchor="ra")
+            gy += dp(28)
+        gy += dp(6)
+    bottom_bars(d, H, 3, "\u25b6  最適化する")
     return img
 
 # ===== 11. 設定（スライダー/スイッチ/外観/データ） ==========================
@@ -546,8 +544,8 @@ labels = ["00 未読込（EmptyState）",
           "04 シフト選択シート（手動修正・親指ゾーン）",
           "05 カレンダー月表示（問題日・シフト色ピル）",
           "06 勤務表 1ヶ月 色マトリクス",
-          "07 編集（希望の反映・一覧）",
-          "08 分析（充足率ゲージ・統計・リスク・内訳）",
+          "07 編集（今月の調整/シフト希望/基本マスター5節）",
+          "08 分析（一般/プロ・ようす・チェック概要・違反内訳18/18）",
           "09 設定（時間/並列・通知/片手・外観・データ）",
           "10 希望反映の確認ダイアログ（メッセージ）",
           "11 中断復帰バナー（プロセスkill耐性）"]
