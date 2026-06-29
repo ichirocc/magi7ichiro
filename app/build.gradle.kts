@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 147
-        versionName = "3.37.0-hud-phase-badge"
+        versionCode = 148
+        versionName = "3.38.0-hud-boss"
     }
 
     buildTypes {
