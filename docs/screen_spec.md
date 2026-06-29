@@ -345,8 +345,16 @@
 
 **キー規約（重要）**: セル＝`"i,j"`（i=職員index, j=日index, 0始まり）／回数＝`"i,k"`（k=シフトindex）／被覆＝`"k,j"`。`schedule[i][j]` のシフトidx `<0` は未割当（公休）。希望バッジは `wishes["i,j"]` と `schedule[i][j]` の一致で 反映済(緑)/未反映(桃) を判定（§03）。
 
-### A.3 デザイン基盤（正典：magi_design_system.md §2–§4）
-具体値とAPIは design_system 参照。**頻用トークンの要点**：タップ48dp・リスト行56dp・シフトタイル56dp・カレンダー日セル64dp／主操作は下部固定・横スクロール禁止／色＋形の二重符号化（HARD実線＋塗りドット・SOFT破線＋中空リング）／意味色＝実行中:青・配布可/緑系:tertiary・要確認:amber・未反映希望:桃 `#EC4899`・破壊的:error。共通部品＝`MagiSegmentedControl`／`MagiTagChip`／`MagiListRow`／`CollapsibleSection`／`SectionNote`／**`DialogHeader`＋3ダイアログボタン（§4.14：確定=右/取消=左/危険⚠・48dp）**。
+### A.3 デザイントークン（具体値・インライン）
+完全版と派生は `magi_design_system.md`。本節だけでも組めるよう主要値を再掲。色は Material3 ColorScheme（システム文字サイズ・ダーク/UDに追従）。
+- **意味色（ライト）**: background `#F5F5F7`／surface `#FFFFFF`／surfaceVariant `#F0F1F4`／outline `#D9DCE3`／onSurface `#111318`／onSurfaceVariant `#6B7280`／**primary（CTA・実行中＝青）`#3B82F6`**／**tertiary（成功・配布可＝緑）`#22C55E`**／**error（重大違反＝赤）`#EF4444`**。
+- **意味色（ダーク）**: background `#111318`／surface `#1B1D22`／primary `#60A5FA`／tertiary `#4ADE80`／error `#F87171`。**UD（高コントラスト, mode=3）**＝白地＋`#000`境界の独立スキーム。
+- **アクセント／シフト既定色**: blue `#3B82F6`(早番)／green `#22C55E`(日勤)／orange `#F59E0B`(夜勤)／purple `#A855F7`(遅番)／**pink `#EC4899`(希望・未反映バッジ)**／red `#EF4444`(違反)／gray `#9CA3AF`(休)。シフト色は未設定時この既定、`shiftColors[kigou]→"#rrggbb"` で上書き可。
+- **角丸(dp)**: extraSmall12／small16／**medium20＝カード**／**large24＝タイル**／extraLarge28／チップ・ピル＝円形。
+- **余白(dp・4グリッド)**: xs4／sm8／md12／**lg16＝カード内標準**／xl20／**section20＝カード間**／**screenH16＝画面左右**。
+- **タイポ(sp)**: headlineSmall 24Bold(画面タイトル)／titleLarge 20SemiBold(節)／**titleMedium 17SemiBold(カード見出し)**／bodyLarge16・Medium15・Small13／labelLarge15・Medium13／**大数値 displaySmall 34**(特に強調は `fontSize=44.sp`)。
+- **寸法**: タップ最小**48dp**・リスト行**56dp**・シフトタイル**56dp**・カレンダー日セル**64dp**。主操作は下部固定・横スクロール禁止・色＋形の二重符号化。
+- **共通部品API**: `MagiSegmentedControl`／`MagiTagChip`／`MagiListRow`／`CollapsibleSection`／`SectionNote`／**`DialogHeader`＋3ダイアログボタン（§4.14：確定=右/取消=左/危険⚠・48dp）**（詳細は design_system §4）。
 
 ### A.4 最適化・制約評価（正典：§02・§08b）
 - **違反18種・重み・違反箇所**＝§08b（`MirrorKeys.weights` が唯一の真実、`weightedScore` に加算。HARD=守るべき約束／SOFT=できれば）。
@@ -355,6 +363,45 @@
 ### A.5 永続化・入出力
 - **自動保存** `magi_autosave.json`（編集を逐次・背景遷移ON_STOP/ON_PAUSEで即時flush・制約編集も対象）。**実行マーカー** `magi_run_marker.json`／**背景最良** `magi_bg_best.json`（中断復帰・「途中結果から再開」）。30段Undo＋Redo。
 - **I/O**: JSON開く/保存はOSファイルピッカー（SAF）。CSVは文字コード自動判定（妥当UTF-8はそのまま/不正はCP932復号）、勤務表テンプレCSVの丸ごと取込（勤務表/希望を選択）、コンポーネント別取込/出力（スタッフは upsert・氏名照合は空白/先頭BOM無視）。固定セル仕様と詳細は§09。
+
+### A.6 入力JSONの実例（スキーマ確認用・最小）
+§A.2 の `MagiState` に対応。職員2名×3シフトの最小例。`schedule[i][j]`＝シフトidx（0=日/1=夜/2=休、`…`は日方向の省略）。キーの index は0始まり。
+```json
+{
+  "startDate": "2026-06-01",
+  "endDate": "2026-06-30",
+  "use2Patterns": false,
+  "shifts": [
+    { "name": "日勤", "kigou": "日", "need1": "3", "need2": "" },
+    { "name": "夜勤", "kigou": "夜", "need1": "1", "need2": "" },
+    { "name": "公休", "kigou": "休", "need1": "0", "need2": "" }
+  ],
+  "groups": [ { "name": "A病棟", "kigou": "A" } ],
+  "staff": [
+    { "name": "古泉 健一", "groupIdx": 0, "skillIdx": 0 },
+    { "name": "佐藤 美和", "groupIdx": 0, "skillIdx": 0 }
+  ],
+  "groupShift":    [ [1, 1, 1] ],
+  "groupShiftApt": [ ["", "", ""] ],
+  "schedule": [
+    [0, 1, 2, 0, 0, "…"],
+    [2, 0, 0, 1, 2, "…"]
+  ],
+  "wishes":     { "0,4": 1 },
+  "staffRange": { "1,1": { "lo": "4", "hi": "6" } },
+  "needDay1": {}, "needDay2": {},
+  "cons1":   [ { "day1": "7", "shiftKigou": "夜", "day2": "2" } ],
+  "cons2":   [ { "shiftKigou": "夜", "count": "8" } ],
+  "cons3":   [ { "pattern": ["夜", "明"] } ],
+  "cons3n":  [ { "pattern": ["夜", "日"] } ],
+  "cons3m":  [], "cons3mn": [],
+  "cons41":  [ { "groupKigou": "A", "shiftKigou": "夜", "l": "1", "u": "2" } ],
+  "cons42":  [],
+  "skillGroups": [], "cons41s": [], "cons42s": [],
+  "shiftColors": { "日": "#22C55E", "夜": "#F59E0B", "休": "#9CA3AF", "__vio__": "" }
+}
+```
+読み方の要点: `wishes "0,4": 1` ＝ 古泉(i=0)の5日目(j=4)に夜勤(idx1)を希望。`staffRange "1,1"` ＝ 佐藤(i=1)の夜勤(k=1)を月4〜6回。`cons1` ＝ 7日窓で夜勤を2回以上（職員ごと）。`cons3n ["夜","日"]` ＝ 夜→日 の並びを禁止(HARD)。`shiftColors."__vio__"` ＝ 違反色の上書き（空＝テーマのerror）。
 
 ---
 
