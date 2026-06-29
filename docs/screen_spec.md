@@ -401,7 +401,14 @@
   "shiftColors": { "日": "#22C55E", "夜": "#F59E0B", "休": "#9CA3AF", "__vio__": "" }
 }
 ```
-読み方の要点: `wishes "0,4": 1` ＝ 古泉(i=0)の5日目(j=4)に夜勤(idx1)を希望。`staffRange "1,1"` ＝ 佐藤(i=1)の夜勤(k=1)を月4〜6回。`cons1` ＝ 7日窓で夜勤を2回以上（職員ごと）。`cons3n ["夜","日"]` ＝ 夜→日 の並びを禁止(HARD)。`shiftColors."__vio__"` ＝ 違反色の上書き（空＝テーマのerror）。
+### A.7 画面の構成順（上→下の合成順・ビルド用早見）
+各タブはスクロール内に上から順に積む（カード間＝section 20dp・画面左右＝16dp）。挙動詳細は各§参照。
+- **ホーム(tab0)**: ① `OperatorNextActionCard`(次の一手・大ボタン1) → ② `CopilotCard`(助言/警告) → ③ `CoverageDiagnosisCard`(不足の原因) → ④ `SettingIssuesCard`(設定ミスの誘導) → ⑤ `ActionCard`(ほかの作り方) → ⑥ `AlternativesCard`(他の案)。§01。
+- **勤務表(tab1)**: ① 表示切替 `MagiSegmentedControl`(7日/カレンダー/1ヶ月) → ② 前/次＋期間 → ③ グリッド(gridMode別＝7日:`Cell` / カレンダー:`MagiCalendarMonthView` / 1ヶ月:`Box`) → ④ 表示中の違反セル列挙(名前 d日・最大8) → ⑤ 凡例(折りたたみ・既定閉)。§03–§06。
+- **編集(tab2)**: ① `WishApplyCard`(下書き/編集中のみ) → ② 希望の一括操作ボタン → ③ サブタブ `MagiSegmentedControl`(今月の調整/シフト希望/基本マスター) → ④ サブタブ本体(§07b)。§07。
+- **分析(tab3)**: ① `MagiSegmentedControl`(一般/プロ) →〔プロのみ ② `V6DashboardCard` → ③ `WeightTableCard`〕→ ④ `OverviewDashboard`(ようす) → ⑤ `CheckSummaryView`(チェック概要) → ⑥ `BreakdownCard`(違反の内訳18種) → ⑦ `BottleneckCard` → ⑧ `FixSuggestionCard`。§08。
+- **設定(tab4)**: ① `AppearanceCard`(自動/明/暗/UD・片手・かんたん/プロ) → ② `ShiftColorCard`(シフト色) → ③ `DataActionsCard`(JSON/CSV/チェック) → ④ `SettingsCard`(最適化設定＝並列/時間/方式/研磨/版) → ⑤ `AdvancedSettingsSection`(折りたたみ・既定閉＝`V6DashboardCard`＋`LogsCard`＋`ColorSettingsView`)。§09/§12。
+- **共通**: 全タブ上に `MagiTopBar`(状態チップ)・下に `BottomCommandBar`(主操作/実行中は停止)＋`MagiBottomNav`(5タブ)。ポップアップ＝シフト選択シート(§04)・希望反映確認(§10)・中断復帰バナー(§11)。全ポップアップは `DialogHeader`＋共有3ボタン(品質ゲート#8)。
 
 ---
 
