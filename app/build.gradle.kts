@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 145
-        versionName = "3.36.0-hud-focus-cylinder"
+        versionCode = 146
+        versionName = "3.36.1-hud-focus-review"
     }
 
     buildTypes {

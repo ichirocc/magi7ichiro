@@ -1425,6 +1425,21 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
     val nameWpx = with(dens) { 60.dp.toPx() }
     val scale = dens.density
     val totalH = with(dens) { (headHpx + rowHpx * staffCount).toDp() }
+    // [perf] テキストは事前計測してキャッシュ（描画ごとの measure を避け、回転アニメのガタつきを防ぐ）。
+    val dayLayouts = remember(days, cs.onSurfaceVariant) {
+        val st = TextStyle(fontSize = 9.sp, color = cs.onSurfaceVariant)
+        (0 until days).map { tm.measure((it + 1).toString(), st) }
+    }
+    val symLayouts = remember(ui.shiftSymbols, ui.shiftTextHex) {
+        ui.shiftSymbols.indices.map { k ->
+            tm.measure(ui.shiftSymbols.getOrNull(k) ?: "", TextStyle(fontSize = 13.sp, color = hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")))
+        }
+    }
+    val nameLayouts = remember(ui.staffNames, cs.onSurface) {
+        ui.staffNames.map { tm.measure(it, TextStyle(fontSize = 11.sp, color = cs.onSurface), maxLines = 1) }
+    }
+    val dragStepPx = with(dens) { 40.dp.toPx() }
+    if (staffCount == 0) { Text("勤務表データがありません。", color = cs.onSurfaceVariant); return }
 
     Column {
         Text(
@@ -1442,6 +1457,7 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(totalH)
+                .semantics { contentDescription = "集中カレンダー。${td + 1}日が焦点。横ドラッグで日付を回し、焦点の日のセルをタップで編集します。詳しい確認は7日表示へ。" }
                 .pointerInput(days, staffCount) {
                     detectTapGestures { off ->
                         val cur = targetDay.coerceIn(0, days - 1)
@@ -1460,8 +1476,8 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                     detectHorizontalDragGestures(onDragEnd = { acc = 0f }) { _, amt ->
                         acc += amt
                         val cur = targetDay.coerceIn(0, days - 1)
-                        if (acc > 26f) { targetDay = (cur - 1).coerceAtLeast(0); acc = 0f }
-                        else if (acc < -26f) { targetDay = (cur + 1).coerceAtMost(days - 1); acc = 0f }
+                        if (acc > dragStepPx) { targetDay = (cur - 1).coerceAtLeast(0); acc = 0f }
+                        else if (acc < -dragStepPx) { targetDay = (cur + 1).coerceAtMost(days - 1); acc = 0f }
                     }
                 }
         ) {
@@ -1476,8 +1492,9 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                 val left = cx - w / 2f
                 val cr = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
                 if (w > 13f) {
-                    val r = tm.measure((d + 1).toString(), TextStyle(fontSize = 9.sp, color = cs.onSurfaceVariant))
-                    drawText(r, topLeft = Offset(cx - r.size.width / 2f, headHpx / 2f - r.size.height / 2f))
+                    dayLayouts.getOrNull(d)?.let { r ->
+                        drawText(r, topLeft = Offset(cx - r.size.width / 2f, headHpx / 2f - r.size.height / 2f))
+                    }
                 }
                 for (i in 0 until staffCount) {
                     val k = ui.schedule.getOrNull(i)?.getOrNull(d) ?: -1
@@ -1486,9 +1503,9 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                     val base = if (k < 0) cs.surfaceVariant else hexToColor(ui.shiftColorHex.getOrNull(k) ?: "")
                     drawRoundRect(color = dimColor(base, bri), topLeft = Offset(left, top + 1f), size = Size(maxOf(1f, w - 1f), ch), cornerRadius = cr)
                     if (w > 22f && k >= 0) {
-                        val fg = hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")
-                        val r = tm.measure(ui.shiftSymbols.getOrNull(k) ?: "", TextStyle(fontSize = 13.sp, color = fg))
-                        drawText(r, topLeft = Offset(cx - r.size.width / 2f, top + ch / 2f - r.size.height / 2f))
+                        symLayouts.getOrNull(k)?.let { r ->
+                            drawText(r, topLeft = Offset(cx - r.size.width / 2f, top + ch / 2f - r.size.height / 2f))
+                        }
                     }
                     val vv = ui.violationCells["$i,$d"]
                     if (vv != null) {
@@ -1509,8 +1526,9 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
             for (i in 0 until staffCount) {
                 val top = headHpx + i * rowHpx
                 drawRect(cs.surface, topLeft = Offset(0f, top), size = Size(maxOf(1f, nameWpx - 2f), rowHpx))
-                val r = tm.measure(ui.staffNames.getOrNull(i) ?: i.toString(), TextStyle(fontSize = 11.sp, color = cs.onSurface), maxLines = 1)
-                drawText(r, topLeft = Offset(4f, top + rowHpx / 2f - r.size.height / 2f))
+                nameLayouts.getOrNull(i)?.let { r ->
+                    drawText(r, topLeft = Offset(4f, top + rowHpx / 2f - r.size.height / 2f))
+                }
             }
         }
     }
