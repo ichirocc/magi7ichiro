@@ -1548,6 +1548,7 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
         ) {
             val centerX = nameWpx + (size.width - nameWpx) / 2f
             val fit = fitFactor(size.width)
+            val surfaceC = cs.surface
             val cr = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
             val ch = rowHpx - 2f
             val r0 = rot.value
@@ -1569,7 +1570,7 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                     val k = ui.schedule.getOrNull(i)?.getOrNull(d) ?: -1
                     val top = headHpx + i * rowHpx
                     val base = if (k < 0) cs.surfaceVariant else (shiftColorsC.getOrNull(k) ?: cs.surfaceVariant)
-                    drawRoundRect(color = dimColor(base, bri), topLeft = Offset(left, top + 1f), size = Size(rectW, ch), cornerRadius = cr)
+                    drawRoundRect(color = dimColor(base, bri, surfaceC), topLeft = Offset(left, top + 1f), size = Size(rectW, ch), cornerRadius = cr)
                     if (w > 22f && k >= 0) {
                         symLayouts.getOrNull(k)?.let { r ->
                             drawText(r, topLeft = Offset(cx - r.size.width / 2f, top + ch / 2f - r.size.height / 2f))
@@ -1601,7 +1602,13 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
     }
 }
 
-private fun dimColor(c: Color, b: Float): Color {
-    val bb = if (b < 0f) 0f else if (b > 1f) 1f else b
-    return Color(red = c.red * bb, green = c.green * bb, blue = c.blue * bb, alpha = c.alpha)
+private fun dimColor(c: Color, b: Float, bg: Color): Color {
+    val t = if (b < 0f) 0f else if (b > 1f) 1f else b
+    // 遠い日ほど背景色へブレンド(大気遠近)。明背景では淡く、暗背景では暗側へ溶け込み、両モードで奥行きが出る。
+    return Color(
+        red = bg.red + (c.red - bg.red) * t,
+        green = bg.green + (c.green - bg.green) * t,
+        blue = bg.blue + (c.blue - bg.blue) * t,
+        alpha = c.alpha,
+    )
 }
