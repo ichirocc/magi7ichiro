@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,11 +108,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.splineBasedDecay
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.input.pointer.util.VelocityTracker
-import kotlin.math.roundToInt
 
 /**
  * CSVのバイト列を文字列へ復号する。妥当な UTF-8 ならそれを採用し、そうでなければ日本の Excel CSV で
@@ -456,8 +450,8 @@ internal fun ScheduleGrid(
             Spacer(Modifier.height(8.dp))
             // 表示切替: §4.5 セグメント（7日=大きく編集 / カレンダー=月の俯瞰 / 1ヶ月=全セル色確認）
             MagiSegmentedControl(
-                options = listOf("7日表示", "カレンダー", "1ヶ月", "集中"),
-                selected = gridMode,
+                options = listOf("7日表示", "カレンダー", "1ヶ月"),
+                selected = gridMode.coerceIn(0, 2),
                 onSelect = { gridMode = it },
             )
             // [違反フィルタ＋内訳] 種別ごとの件数つきチップで「どの違反が何件か」を勤務表上で一覧化。
@@ -516,9 +510,7 @@ internal fun ScheduleGrid(
             Spacer(Modifier.height(12.dp))
             BoxWithConstraints {
                 val totalW = maxWidth
-                if (gridMode == 3) {
-                    MagiFocusCylinder(ui, onCellClick)
-                } else if (gridMode == 0) {
+                if (gridMode == 0) {
                     val staffW = 64.dp
                     val sumW = 44.dp   // [集計] 右端「勤務」計の列幅
                     val cellW = ((totalW - staffW - sumW) / win).coerceIn(34.dp, 80.dp)
@@ -1403,227 +1395,3 @@ private fun TallyBox(
     }
 }
 
-// ===== 集中モード（HUD円柱フィッシュアイ・カレンダー）=====
-// MAGI HUD コンセプトから移植：日付を円柱面に投影し焦点日を虫眼鏡状に拡大。
-// x(u)=RAD*sin(clamp(u*ANG))+AMP*tanh(u/WID) / 明度=0.64+0.36*cos。遠い日ほど細く暗い。
-// 違反枠(HARD実線/SOFT破線)・違反ドット・希望ドット(緑=反映/桃=未反映)は既存ロジックを流用。
-@Composable
-internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val days = ui.days.coerceAtLeast(1)
-    val staffCount = ui.schedule.size
-    val vioColor = ui.violationColorHex.takeIf { it.isNotBlank() }?.let { hexToColor(it) } ?: cs.error
-    val tm = rememberTextMeasurer()
-    var savedDay by rememberSaveable { mutableStateOf(0) }
-    val scope = rememberCoroutineScope()
-    val rot = remember { Animatable(savedDay.coerceIn(0, days - 1).toFloat()) }
-    LaunchedEffect(days) { rot.updateBounds(0f, (days - 1).coerceAtLeast(0).toFloat()) }
-    val td = rot.value.roundToInt().coerceIn(0, days - 1)
-    fun goToDay(d: Int) {
-        val t = d.coerceIn(0, days - 1)
-        savedDay = t
-        scope.launch { rot.animateTo(t.toFloat(), tween(320)) }
-    }
-
-    val ANG = (7.7 * kotlin.math.PI / 180.0).toFloat()
-    val RAD = 205f; val AMP = 5.8f; val WID = 0.35f
-    val HALF = (kotlin.math.PI / 2.0).toFloat()
-    fun cl(x: Float) = if (x < -HALF) -HALF else if (x > HALF) HALF else x
-    fun sx(u: Float) = RAD * kotlin.math.sin(cl(u * ANG)) + AMP * kotlin.math.tanh(u / WID)
-    fun br(u: Float) = 0.64f + 0.36f * kotlin.math.cos(cl(u * ANG))
-
-    val dens = androidx.compose.ui.platform.LocalDensity.current
-    val rowHpx = with(dens) { 40.dp.toPx() }
-    val headHpx = with(dens) { 26.dp.toPx() }
-    val nameWpx = with(dens) { 60.dp.toPx() }
-    val scale = dens.density
-    val totalH = with(dens) { (headHpx + rowHpx * staffCount).toDp() }
-    // [perf] テキストは事前計測してキャッシュ（描画ごとの measure を避け、回転アニメのガタつきを防ぐ）。
-    val todayIdx = remember(ui.startDate, days) {
-        runCatching {
-            val off = (LocalDate.now().toEpochDay() - LocalDate.parse(ui.startDate).toEpochDay()).toInt()
-            if (off in 0 until days) off else -1
-        }.getOrDefault(-1)
-    }
-    val dayLayouts = remember(days, cs.onSurfaceVariant, ui.startDate, todayIdx) {
-        val sdow = startDowMonFirst(ui.startDate)
-        (0 until days).map { d ->
-            val dow = (sdow + d) % 7  // 0=月..6=日
-            val col = when { d == todayIdx -> MagiAccent.green; dow == 5 -> MagiAccent.blue; dow == 6 -> MagiAccent.red; else -> cs.onSurfaceVariant }
-            tm.measure((d + 1).toString(), TextStyle(fontSize = 9.sp, color = col))
-        }
-    }
-    val symLayouts = remember(ui.shiftSymbols, ui.shiftTextHex) {
-        ui.shiftSymbols.indices.map { k ->
-            tm.measure(ui.shiftSymbols.getOrNull(k) ?: "", TextStyle(fontSize = 13.sp, color = hexToColor(ui.shiftTextHex.getOrNull(k) ?: "")))
-        }
-    }
-    val nameLayouts = remember(ui.staffNames, cs.onSurface) {
-        ui.staffNames.map { tm.measure(it, TextStyle(fontSize = 11.sp, color = cs.onSurface), maxLines = 1) }
-    }
-    val dragStepPx = with(dens) { 40.dp.toPx() }
-    if (staffCount == 0) { Text("勤務表データがありません。", color = cs.onSurfaceVariant); return }
-
-    // [perf] フレーム毎の重い処理を事前計算で排除（色文字列パース / "i,d"文字列キーのMap探索 / sin・cos・tanh）。
-    val shiftColorsC = remember(ui.shiftColorHex) { ui.shiftColorHex.map { hexToColor(it) } }
-    val pinkC = Color(0xFFEC4899)
-    val hardStroke = remember { Stroke(width = 2f) }
-    val softStroke = remember { Stroke(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f))) }
-    val thinStroke = remember { Stroke(width = 1.5f) }
-    // 違反/希望はセル配列へ展開（0=なし、違反:1=HARD/2=SOFT、希望:1=一致/2=不一致）。
-    val vioKind = remember(ui.violationCells, staffCount, days) {
-        Array(staffCount) { i -> IntArray(days) { d ->
-            val v = ui.violationCells["$i,$d"]
-            if (v == null) 0 else if (isHardCellViolation(v)) 1 else 2
-        } }
-    }
-    val wishKind = remember(ui.wishes, ui.schedule, staffCount, days) {
-        Array(staffCount) { i -> IntArray(days) { d ->
-            val wk = ui.wishes["$i,$d"]
-            if (wk == null) 0 else { val k = ui.schedule.getOrNull(i)?.getOrNull(d) ?: -1; if (wk == k) 1 else 2 }
-        } }
-    }
-    // 円柱投影(sx)・列幅・明るさを u の関数として事前計算しLUT化。描画は配列参照のみ（三角関数を毎フレーム呼ばない）。
-    val uMax = 14f
-    val lutStep = 0.02f
-    val lutN = ((2f * uMax) / lutStep).toInt() + 1
-    fun lerpLut(a: FloatArray, u: Float): Float { val f = (u + uMax) / lutStep; val i = f.toInt(); return if (i < 0) a[0] else if (i >= lutN - 1) a[lutN - 1] else a[i] + (a[i + 1] - a[i]) * (f - i) }
-    // [fit] 画面幅に応じて円柱を横に収める係数（設計値を超える拡大はせず、狭い端末でのみ縮めて端の日の見切れを防ぐ）。RAD_eff = RAD*fit 相当。
-    fun fitFactor(widthPx: Float): Float {
-        val halfAvail = (widthPx - nameWpx) / 2f
-        val designExtent = (RAD + AMP) * scale
-        val marginPx = 8f * scale
-        return if (designExtent > halfAvail - marginPx && designExtent > 0.01f) ((halfAvail - marginPx) / designExtent).coerceIn(0.2f, 1f) else 1f
-    }
-    // 描画幅から fit(縮小係数)を確定し、投影sx・列幅にあらかじめ畳み込む。→ 描画ループの *fit と sx() 呼び出しを排除し純粋なLUT参照に。fit は画面サイズ変化時のみ再計算。
-    var canvasW by remember { mutableIntStateOf(0) }
-    val fit = if (canvasW > 0) fitFactor(canvasW.toFloat()) else 1f
-    val lutSx = remember(scale, fit) { FloatArray(lutN) { sx(-uMax + it * lutStep) * scale * fit } }
-    val lutW = remember(scale, fit) { FloatArray(lutN) { (sx(-uMax + it * lutStep + 0.5f) - sx(-uMax + it * lutStep - 0.5f)) * scale * fit } }
-    val lutBr = remember(scale) { FloatArray(lutN) { br(-uMax + it * lutStep) } }
-
-    Column {
-        Text(
-            "\u2299 集中モード：横スワイプでドラムを回転。指を離すと慣性で流れ、最寄りの日に吸着。中央の日のセルをタップで修正画面。土=青/日=赤/本日=緑下線。遠い日ほど細く暗く。",
-            style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { goToDay(td - 1) }, enabled = td > 0, modifier = Modifier.height(48.dp)) { Text("\u25c0 前日") }
-            Text("${td + 1}日 / 全${days}日", style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-            Button(onClick = { goToDay(td + 1) }, enabled = td < days - 1, modifier = Modifier.height(48.dp)) { Text("翌日 \u25b6") }
-        }
-        Spacer(Modifier.height(8.dp))
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .height(totalH)
-                .onSizeChanged { canvasW = it.width }
-                .semantics { contentDescription = "集中カレンダー。${td + 1}日が中央。横スワイプで回転（指を離すと慣性で最寄りの日に吸着）、中央の日のセルをタップで修正画面を開きます。詳しい確認は7日表示へ。" }
-                .pointerInput(days, staffCount) {
-                    detectTapGestures { off ->
-                        val cur = rot.value.roundToInt().coerceIn(0, days - 1)
-                        val centerX = nameWpx + (size.width.toFloat() - nameWpx) / 2f
-                        var best = cur; var bd = Float.MAX_VALUE
-                        for (d in 0 until days) {
-                            val dd = kotlin.math.abs((centerX + lerpLut(lutSx, d - rot.value)) - off.x)
-                            if (dd < bd) { bd = dd; best = d }
-                        }
-                        val i = ((off.y - headHpx) / rowHpx).toInt()
-                        // 中央(選択中)の日のセルをタップ → 修正画面。側面の日をタップ → その日を中央へ回す。
-                        if (best == cur && i in 0 until staffCount) onCellClick(i, best) else goToDay(best)
-                    }
-                }
-                .pointerInput(days) {
-                    val decay = splineBasedDecay<Float>(this)
-                    val tracker = VelocityTracker()
-                    detectHorizontalDragGestures(
-                        onDragStart = { tracker.resetTracking(); scope.launch { rot.stop() } },
-                        onDragEnd = {
-                            val vx = tracker.calculateVelocity().x
-                            scope.launch {
-                                // 慣性で流す → 最寄りの日に吸着（dragStepPx を1日ぶんの感度に流用）
-                                if (kotlin.math.abs(vx) > 1f) rot.animateDecay(-vx / dragStepPx, decay)
-                                val n = rot.value.roundToInt().coerceIn(0, days - 1)
-                                rot.animateTo(n.toFloat(), tween(180)); savedDay = n
-                            }
-                        },
-                        onDragCancel = {
-                            scope.launch {
-                                val n = rot.value.roundToInt().coerceIn(0, days - 1)
-                                rot.animateTo(n.toFloat(), tween(180)); savedDay = n
-                            }
-                        }
-                    ) { change, amt ->
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        scope.launch { rot.snapTo((rot.value - amt / dragStepPx).coerceIn(0f, (days - 1).coerceAtLeast(0).toFloat())) }
-                    }
-                }
-        ) {
-            val centerX = nameWpx + (size.width - nameWpx) / 2f
-            val surfaceC = cs.surface
-            val cr = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
-            val ch = rowHpx - 2f
-            val r0 = rot.value
-            for (d in 0 until days) {
-                val u = d - r0
-                if (u < -13f || u > 13f) continue
-                val w = lerpLut(lutW, u)
-                if (w < 0.7f) continue
-                val cx = centerX + lerpLut(lutSx, u)
-                val bri = lerpLut(lutBr, u)
-                val left = cx - w / 2f
-                val rectW = maxOf(1f, w - 1f)
-                if (w > 13f) {
-                    dayLayouts.getOrNull(d)?.let { r ->
-                        val ty = headHpx / 2f - r.size.height / 2f
-                        drawText(r, topLeft = Offset(cx - r.size.width / 2f, ty))
-                        if (d == todayIdx) drawRoundRect(MagiAccent.green, topLeft = Offset(cx - 7f, ty + r.size.height + 1f), size = Size(14f, 2.5f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5f, 1.5f))
-                    }
-                }
-                for (i in 0 until staffCount) {
-                    val k = ui.schedule.getOrNull(i)?.getOrNull(d) ?: -1
-                    val top = headHpx + i * rowHpx
-                    val base = if (k < 0) cs.surfaceVariant else (shiftColorsC.getOrNull(k) ?: cs.surfaceVariant)
-                    drawRoundRect(color = dimColor(base, bri, surfaceC), topLeft = Offset(left, top + 1f), size = Size(rectW, ch), cornerRadius = cr)
-                    if (w > 22f && k >= 0) {
-                        symLayouts.getOrNull(k)?.let { r ->
-                            drawText(r, topLeft = Offset(cx - r.size.width / 2f, top + ch / 2f - r.size.height / 2f))
-                        }
-                    }
-                    val vk = vioKind[i][d]
-                    if (vk != 0) {
-                        val hard = vk == 1
-                        drawRoundRect(color = vioColor, topLeft = Offset(left, top + 1f), size = Size(rectW, ch), cornerRadius = cr, style = if (hard) hardStroke else softStroke)
-                        if (w > 16f) {
-                            val c = Offset(left + w - 6f, top + 6f)
-                            if (hard) drawCircle(vioColor, 4f, c) else { drawCircle(cs.surface, 4f, c); drawCircle(vioColor, 4f, c, style = thinStroke) }
-                        }
-                    }
-                    val wk = wishKind[i][d]
-                    if (wk != 0 && w > 18f) {
-                        drawCircle(if (wk == 1) cs.tertiary else pinkC, 4f, Offset(left + 6f, top + ch - 6f))
-                    }
-                }
-            }
-            for (i in 0 until staffCount) {
-                val top = headHpx + i * rowHpx
-                drawRect(cs.surface, topLeft = Offset(0f, top), size = Size(maxOf(1f, nameWpx - 2f), rowHpx))
-                nameLayouts.getOrNull(i)?.let { r ->
-                    drawText(r, topLeft = Offset(4f, top + rowHpx / 2f - r.size.height / 2f))
-                }
-            }
-        }
-    }
-}
-
-private fun dimColor(c: Color, b: Float, bg: Color): Color {
-    val t = if (b < 0f) 0f else if (b > 1f) 1f else b
-    // 遠い日ほど背景色へブレンド(大気遠近)。明背景では淡く、暗背景では暗側へ溶け込み、両モードで奥行きが出る。
-    return Color(
-        red = bg.red + (c.red - bg.red) * t,
-        green = bg.green + (c.green - bg.green) * t,
-        blue = bg.blue + (c.blue - bg.blue) * t,
-        alpha = c.alpha,
-    )
-}
