@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1486,9 +1487,6 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
     val uMax = 14f
     val lutStep = 0.02f
     val lutN = ((2f * uMax) / lutStep).toInt() + 1
-    val lutSx = remember(scale) { FloatArray(lutN) { sx(-uMax + it * lutStep) * scale } }
-    val lutW = remember(scale) { FloatArray(lutN) { (sx(-uMax + it * lutStep + 0.5f) - sx(-uMax + it * lutStep - 0.5f)) * scale } }
-    val lutBr = remember(scale) { FloatArray(lutN) { br(-uMax + it * lutStep) } }
     fun lerpLut(a: FloatArray, u: Float): Float { val f = (u + uMax) / lutStep; val i = f.toInt(); return if (i < 0) a[0] else if (i >= lutN - 1) a[lutN - 1] else a[i] + (a[i + 1] - a[i]) * (f - i) }
     // [fit] 画面幅に応じて円柱を横に収める係数（設計値を超える拡大はせず、狭い端末でのみ縮めて端の日の見切れを防ぐ）。RAD_eff = RAD*fit 相当。
     fun fitFactor(widthPx: Float): Float {
@@ -1497,6 +1495,12 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
         val marginPx = 8f * scale
         return if (designExtent > halfAvail - marginPx && designExtent > 0.01f) ((halfAvail - marginPx) / designExtent).coerceIn(0.2f, 1f) else 1f
     }
+    // 描画幅から fit(縮小係数)を確定し、投影sx・列幅にあらかじめ畳み込む。→ 描画ループの *fit と sx() 呼び出しを排除し純粋なLUT参照に。fit は画面サイズ変化時のみ再計算。
+    var canvasW by remember { mutableIntStateOf(0) }
+    val fit = if (canvasW > 0) fitFactor(canvasW.toFloat()) else 1f
+    val lutSx = remember(scale, fit) { FloatArray(lutN) { sx(-uMax + it * lutStep) * scale * fit } }
+    val lutW = remember(scale, fit) { FloatArray(lutN) { (sx(-uMax + it * lutStep + 0.5f) - sx(-uMax + it * lutStep - 0.5f)) * scale * fit } }
+    val lutBr = remember(scale) { FloatArray(lutN) { br(-uMax + it * lutStep) } }
 
     Column {
         Text(
@@ -1514,15 +1518,15 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(totalH)
+                .onSizeChanged { canvasW = it.width }
                 .semantics { contentDescription = "集中カレンダー。${td + 1}日が中央。横スワイプで回転（指を離すと慣性で最寄りの日に吸着）、中央の日のセルをタップで修正画面を開きます。詳しい確認は7日表示へ。" }
                 .pointerInput(days, staffCount) {
                     detectTapGestures { off ->
                         val cur = rot.value.roundToInt().coerceIn(0, days - 1)
                         val centerX = nameWpx + (size.width.toFloat() - nameWpx) / 2f
-                        val fit = fitFactor(size.width.toFloat())
                         var best = cur; var bd = Float.MAX_VALUE
                         for (d in 0 until days) {
-                            val dd = kotlin.math.abs((centerX + sx(d - rot.value) * scale * fit) - off.x)
+                            val dd = kotlin.math.abs((centerX + lerpLut(lutSx, d - rot.value)) - off.x)
                             if (dd < bd) { bd = dd; best = d }
                         }
                         val i = ((off.y - headHpx) / rowHpx).toInt()
@@ -1557,7 +1561,6 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                 }
         ) {
             val centerX = nameWpx + (size.width - nameWpx) / 2f
-            val fit = fitFactor(size.width)
             val surfaceC = cs.surface
             val cr = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
             val ch = rowHpx - 2f
@@ -1565,9 +1568,9 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
             for (d in 0 until days) {
                 val u = d - r0
                 if (u < -13f || u > 13f) continue
-                val w = lerpLut(lutW, u) * fit
+                val w = lerpLut(lutW, u)
                 if (w < 0.7f) continue
-                val cx = centerX + lerpLut(lutSx, u) * fit
+                val cx = centerX + lerpLut(lutSx, u)
                 val bri = lerpLut(lutBr, u)
                 val left = cx - w / 2f
                 val rectW = maxOf(1f, w - 1f)
