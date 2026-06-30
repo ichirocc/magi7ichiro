@@ -1438,9 +1438,19 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
     val scale = dens.density
     val totalH = with(dens) { (headHpx + rowHpx * staffCount).toDp() }
     // [perf] テキストは事前計測してキャッシュ（描画ごとの measure を避け、回転アニメのガタつきを防ぐ）。
-    val dayLayouts = remember(days, cs.onSurfaceVariant) {
-        val st = TextStyle(fontSize = 9.sp, color = cs.onSurfaceVariant)
-        (0 until days).map { tm.measure((it + 1).toString(), st) }
+    val todayIdx = remember(ui.startDate, days) {
+        runCatching {
+            val off = (LocalDate.now().toEpochDay() - LocalDate.parse(ui.startDate).toEpochDay()).toInt()
+            if (off in 0 until days) off else -1
+        }.getOrDefault(-1)
+    }
+    val dayLayouts = remember(days, cs.onSurfaceVariant, ui.startDate, todayIdx) {
+        val sdow = startDowMonFirst(ui.startDate)
+        (0 until days).map { d ->
+            val dow = (sdow + d) % 7  // 0=月..6=日
+            val col = when { d == todayIdx -> MagiAccent.green; dow == 5 -> MagiAccent.blue; dow == 6 -> MagiAccent.red; else -> cs.onSurfaceVariant }
+            tm.measure((d + 1).toString(), TextStyle(fontSize = 9.sp, color = col))
+        }
     }
     val symLayouts = remember(ui.shiftSymbols, ui.shiftTextHex) {
         ui.shiftSymbols.indices.map { k ->
@@ -1490,7 +1500,7 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
 
     Column {
         Text(
-            "\u2299 集中モード：横スワイプでドラムを回転。指を離すと慣性で流れ、最寄りの日に吸着。中央の日のセルをタップで修正画面。遠い日ほど細く暗く。",
+            "\u2299 集中モード：横スワイプでドラムを回転。指を離すと慣性で流れ、最寄りの日に吸着。中央の日のセルをタップで修正画面。土=青/日=赤/本日=緑下線。遠い日ほど細く暗く。",
             style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
@@ -1563,7 +1573,9 @@ internal fun MagiFocusCylinder(ui: UiState, onCellClick: (Int, Int) -> Unit) {
                 val rectW = maxOf(1f, w - 1f)
                 if (w > 13f) {
                     dayLayouts.getOrNull(d)?.let { r ->
-                        drawText(r, topLeft = Offset(cx - r.size.width / 2f, headHpx / 2f - r.size.height / 2f))
+                        val ty = headHpx / 2f - r.size.height / 2f
+                        drawText(r, topLeft = Offset(cx - r.size.width / 2f, ty))
+                        if (d == todayIdx) drawRoundRect(MagiAccent.green, topLeft = Offset(cx - 7f, ty + r.size.height + 1f), size = Size(14f, 2.5f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5f, 1.5f))
                     }
                 }
                 for (i in 0 until staffCount) {

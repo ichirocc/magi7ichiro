@@ -11,8 +11,8 @@ android {
         applicationId = "com.magi.app"
         minSdk = 35
         targetSdk = 36
-        versionCode = 152
-        versionName = "3.42.0-focus-depth"
+        versionCode = 153
+        versionName = "3.43.0-focus-cal"
     }
 
     buildTypes {
