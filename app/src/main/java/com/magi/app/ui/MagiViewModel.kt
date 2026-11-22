@@ -24,7 +24,6 @@ import com.magi.app.v6.FixKind
 import com.magi.app.v6.V6PortReport
 import com.magi.app.v6.CoverageDiagnosis
 import com.magi.app.v6.V6Algorithm
-import com.magi.app.v6.V6FairEqualizer
 import com.magi.app.v6.V6FinalPort
 import com.magi.app.v6.V6NativeOptimizer
 import com.magi.app.v6.V6SanityPort
@@ -82,8 +81,6 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
     private var resultSchedule: Array<IntArray>? = null
     private var job: Job? = null
     private var checkJob: Job? = null
-    private var fairJob: Job? = null   // [回数を揃える] 計算ジョブ（連続タップ時は前の計算を破棄）
-    private var fairPending: Pair<Array<IntArray>, Array<IntArray>>? = null   // (計算時の勤務表, 揃えた案)
     private var fixJob: Job? = null   // [競合解消] 改善提案探索。連続タップ時に前探索をキャンセルし古い結果で上書きしない
     private var checkSeq = 0L
 
@@ -1750,71 +1747,6 @@ class MagiViewModel(app: Application) : AndroidViewModel(app) {
             message = "改善手を適用: ${s.label}",
         ) }
         refreshCheck()
-    }
-
-    /**
-     * [回数を揃える] グループ内のシフト回数のばらつき(fair)を、必須と個人上下限を悪化させずに減らす案を作る。
-     * c1・c3系など他の SOFT は崩れ得るため、すぐには適用せず前後比較(fairPreview)を出して利用者に選ばせる。
-     */
-    fun equalizeGroupCounts() {
-        val st = state ?: return
-        val sched = currentSchedule ?: return
-        val snap = sched.copy2D()
-        fairJob?.cancel()
-        fairPending = null
-        _ui.update { it.copy(fairRunning = true, fairPreview = null) }
-        fairJob = viewModelScope.launch {
-            try {
-                val r = withContext(Dispatchers.Default) { V6FairEqualizer.run(st, snap) }
-                if (r.moves == 0) {
-                    _ui.update { it.copy(fairRunning = false, message = "回数を揃える: 必須と個人の上下限を守ったままでは揃えられる手がありません（ばらつき ${V6FairEqualizer.fairOf(r.before)}）") }
-                    return@launch
-                }
-                fairPending = snap to r.schedule
-                _ui.update { it.copy(fairRunning = false, fairPreview = FairPreviewUi(
-                    fairBefore = V6FairEqualizer.fairOf(r.before), fairAfter = V6FairEqualizer.fairOf(r.after),
-                    c1Before = r.before.breakdown["c1"] ?: 0, c1After = r.after.breakdown["c1"] ?: 0,
-                    totalBefore = r.before.total, totalAfter = r.after.total,
-                    moves = r.moves, timedOut = r.timedOut,
-                )) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _ui.update { it.copy(fairRunning = false, message = "回数を揃える: 失敗しました（${e.message}）") }
-            }
-        }
-    }
-
-    /** [回数を揃える] プレビューを適用。計算後に勤務表が変わっていたら適用しない（古い案で上書きしない）。Undo 可。 */
-    fun applyFairPreview() {
-        val st = state ?: return
-        val cur = currentSchedule ?: return
-        val (base, next) = fairPending ?: return
-        val pv = _ui.value.fairPreview
-        fairPending = null
-        if (!cur.contentDeepEquals(base)) {
-            _ui.update { it.copy(fairPreview = null, message = "回数を揃える: 計算後に勤務表が変わったため適用しませんでした。もう一度押してください") }
-            return
-        }
-        pushUndo()
-        val sched = next.copy2D()
-        currentSchedule = sched
-        state = st.withSchedule(sched)
-        autoSave()
-        _ui.update { it.copy(
-            hasResult = true,
-            schedule = sched.map { it.toList() },
-            fairPreview = null,
-            fixSuggestions = emptyList(),
-            message = "回数を揃えました: ばらつき ${pv?.fairBefore ?: "?"}→${pv?.fairAfter ?: "?"}（元に戻せます）",
-        ) }
-        refreshCheck()
-    }
-
-    fun dismissFairPreview() {
-        fairJob?.cancel()
-        fairPending = null
-        _ui.update { it.copy(fairPreview = null, fairRunning = false) }
     }
 
     private fun applyStructure(r: Ws1Result) {

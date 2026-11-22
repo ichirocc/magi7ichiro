@@ -1200,7 +1200,7 @@ private fun Int.floorMod(m: Int): Int = if (m == 0) 0 else ((this % m) + m) % m
 // 片手一本指: 横スクロール（rememberScrollState）でシフト列/日列を送る。
 // ============================================================================
 @Composable
-internal fun TallyCard(ui: UiState, vm: MagiViewModel, onFix: (Int?, Int?) -> Unit = { _, _ -> }, onEqualize: () -> Unit = { vm.equalizeGroupCounts() }) {
+internal fun TallyCard(ui: UiState, vm: MagiViewModel, onFix: (Int?, Int?) -> Unit = { _, _ -> }) {
     val k = ui.shiftSymbols.size
     val s = ui.schedule.size
     val t = ui.days
@@ -1223,19 +1223,7 @@ internal fun TallyCard(ui: UiState, vm: MagiViewModel, onFix: (Int?, Int?) -> Un
     var mode by rememberSaveable { mutableStateOf(0) }   // 0=職員別 / 1=日別
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("シフト集計", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                // [回数を揃える] グループ内の回数のばらつきを、必須と個人の上下限を守ったまま減らす案を作る。
-                if (ui.fairRunning) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("揃えています…", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-                } else {
-                    OutlinedButton(onClick = onEqualize, enabled = !ui.running, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("回数を揃える")
-                    }
-                }
-            }
+            Text("シフト集計", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             MagiSegmentedControl(options = listOf("職員別", "日別"), selected = mode, onSelect = { mode = it })
             Spacer(Modifier.height(12.dp))
@@ -1318,23 +1306,6 @@ internal fun TallyCard(ui: UiState, vm: MagiViewModel, onFix: (Int?, Int?) -> Un
                         }
                     }
                 }
-            }
-            ui.fairPreview?.let { pv ->
-                AlertDialog(
-                    onDismissRequest = { vm.dismissFairPreview() },
-                    title = { Text("回数を揃える案") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("グループ内のばらつき ${pv.fairBefore} → ${pv.fairAfter}", style = MaterialTheme.typography.bodyLarge)
-                            Text("7日に休2回のズレ ${pv.c1Before} → ${pv.c1After}", style = MaterialTheme.typography.bodyMedium)
-                            Text("違反の合計 ${pv.totalBefore} → ${pv.totalAfter}", style = MaterialTheme.typography.bodyMedium)
-                            Text("必須と個人の上下限は悪くなりません（${pv.moves}組を入れ替え）" + if (pv.timedOut) "・時間切れで途中まで" else "",
-                                style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
-                        }
-                    },
-                    confirmButton = { DialogConfirmButton("適用", onClick = { vm.applyFairPreview() }) },
-                    dismissButton = { DialogDismissButton(onClick = { vm.dismissFairPreview() }, text = "やめる") },
-                )
             }
             detail?.let { d ->
                 AlertDialog(
