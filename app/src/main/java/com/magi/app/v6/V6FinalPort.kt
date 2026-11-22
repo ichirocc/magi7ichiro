@@ -207,12 +207,13 @@ object V6FinalPort {
         val stallMs = (budgetMs * 9 / 10).coerceAtLeast(20_000L)
         // [5分圧縮] HARD=0到達後（=配布可・残りは研磨のみ）は頭打ちをより早く検知して終了（plateauなので品質は不変）。
         val stallHardMs = (budgetMs / 8).coerceAtLeast(15_000L)   // 5分予算→37.5s
-        // [賢い早期脱出] 証明可能に解消不能なHARDの下限。実現不能な希望（担当外シフトへの希望）は
-        //   どう探索しても消せない＝恒久pref違反なので、HARD はこの件数より下がらない。HARD がこの
-        //   下限まで到達したら「HARD=0 到達」と同じく頭打ち(plateau)とみなし、短い stallHardMs で早く返す。
-        //   解ける可能性のあるHARD(>下限)は従来どおり stallMs(=予算9/10)でしっかり粘るため退行はしない。
-        //   下限は構造的(assignabilityのみ)で最適化中に変化しないため一度だけ算出する。
-        val hardFloor = try { V6SanityPort.detectImpossibleWishes(state).size } catch (_: Exception) { 0 }
+        // [賢い早期脱出] 証明可能に解消不能なHARDの下限。HARD がこの下限まで到達したら「HARD=0 到達」と
+        //   同じく頭打ち(plateau)とみなし、短い stallHardMs で早く返す。解ける可能性のあるHARD(>下限)は
+        //   従来どおり stallMs でしっかり粘るため退行はしない。下限は希望と禁止の並びだけで決まり
+        //   最適化中に変化しないため一度だけ算出する。
+        //   旧: 担当外シフトへの希望の件数を下限にしていたが、監査#11② 以降それは HARD に数えない＝過大な下限で、
+        //   解ける HARD が残っていても短い猶予で打ち切り得た。→ 希望どうしの禁止の並び（互いに素な窓数）に置換。
+        val hardFloor = try { V6SanityPort.provableHardFloor(state) } catch (_: Exception) { 0 }
         val lastImproveMs = java.util.concurrent.atomic.AtomicLong(startMs)
         val stagnationFired = java.util.concurrent.atomic.AtomicBoolean(false)
         val bestHard = java.util.concurrent.atomic.AtomicInteger(Int.MAX_VALUE)   // 並列ワーカーから読むため atomic
@@ -239,8 +240,8 @@ object V6FinalPort {
         val shouldStop = {
             val now = System.currentTimeMillis()
             // [賢い早期脱出] bestHard が「解消不能な下限(hardFloor)」以下＝解けるHARDは出し切った状態。
-            //   この時点で残るのは消せない実現不能希望のみなので、HARD=0 と同様に短い猶予で頭打ち終了。
-            //   hardFloor=0（実現不能希望なし）なら従来の「bestHard==0」と完全一致＝挙動不変。
+            //   この時点で残るのは希望どうしの禁止の並びなど消せないものだけなので、HARD=0 と同様に短い猶予で頭打ち終了。
+            //   hardFloor=0 なら従来の「bestHard==0」と完全一致＝挙動不変。
             val effStall = if (bestHard.get() <= hardFloor) stallHardMs else stallMs
             when {
                 now >= searchDeadlineMs || !isActive -> true
@@ -312,7 +313,8 @@ object V6FinalPort {
         )) else emptyList()
         val stagnationLog = if (stagnationFired.get()) listOf(MirrorLog(
             level = "I", tag = "EarlyStop",
-            message = "停滞検知: 改善が無いため早期終了（予算${seconds}s中 ${(tPost1 - startMs) / 1000}sで停止・解は最良を維持）",
+            message = "停滞検知: 改善が無いため早期終了（予算${seconds}s中 ${(tPost1 - startMs) / 1000}sで停止・解は最良を維持" +
+                "・消せないHARDの下限=$hardFloor・最良HARD=${bestHard.get()}）",
         )) else emptyList()
         // [最終番兵/多重防御] 全段 keep-best のため通常は発火しないが、万一パイプラインが入力より
         // 悪い結果を返した場合は入力を採用し退化を防ぐ（checkResultWorse をここで配線）。

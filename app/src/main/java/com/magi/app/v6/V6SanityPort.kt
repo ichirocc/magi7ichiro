@@ -164,6 +164,43 @@ object V6SanityPort {
     }
 
     /**
+     * [賢い早期脱出] どう組んでも消せない HARD 件数の「証明できる下限」（早期終了の判定専用・読み取り専用）。
+     *
+     * 数えるのは「希望どうしで禁止の並び(c3n)を作る窓」だけ。窓の全セルが担当可能な希望で、その希望どおりに
+     *   並べると禁止の並びに一致する場合、その窓では「希望を1件外す(pref+1)」か「禁止の並びが成立(c3n+1)」の
+     *   どちらかが必ず起きる。窓どうしがセルを共有すると1件の希望調整で両方消えうるため、職員ごとに
+     *   区間スケジューリング（終端の早い順の貪欲＝互いに素な窓の最大数）で重ならない窓だけを数える。
+     *   互いに素な窓の違反はセルが異なり、pref はセル単位・c3n は窓単位で数えるので二重計上にならない。
+     *   同じ並びが重複登録されていても同一セル集合＝重なりとして1件にしか数えない（過大評価しない）。
+     *
+     * 担当外シフトへの希望(detectImpossibleWishes)は数えない: 監査#11② 以降チェッカーは不可能希望を pref に
+     *   計上せず、最適化器も担当外へは置かない＝HARD に現れないため、下限に入れると過大になり早すぎる終了を招く。
+     */
+    fun provableHardFloor(state: MagiState, p: Problem = Problem(state)): Int {
+        var floor = 0
+        for (i in 0 until p.S) {
+            val ends = ArrayList<IntArray>()   // [start, end] の閉区間
+            for (c in p.cons3n) {
+                val seq = c.seq
+                val d = seq.size
+                if (d == 0 || d > p.T) continue
+                for (j in 0..(p.T - d)) {
+                    var all = true
+                    for (l in 0 until d) {
+                        val w = p.wish[i][j + l]
+                        if (w != seq[l] || !p.canDo(i, w)) { all = false; break }
+                    }
+                    if (all) ends.add(intArrayOf(j, j + d - 1))
+                }
+            }
+            ends.sortBy { it[1] }
+            var lastEnd = -1
+            for (iv in ends) if (iv[0] > lastEnd) { floor++; lastEnd = iv[1] }
+        }
+        return floor
+    }
+
+    /**
      * [設定ミスの誘導修正] 制約・希望の設定間違いを、人間が直せる粒度（誰の/何日の/どのシフト/どの制約、
      * そして具体的な直し方）で列挙する。検出済みの構造化データを平易な日本語の指示文に変換するだけで、
      * 重み・データは一切変更しない（読み取り専用＝安全）。表示順は「直すべき度合い」が高い順。
