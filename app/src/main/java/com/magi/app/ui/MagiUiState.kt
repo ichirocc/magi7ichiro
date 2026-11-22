@@ -8,6 +8,14 @@ import com.magi.app.v6.V6PortReport
 // [リファクタ Phase3] UI 状態モデルを MagiViewModel.kt から分離（同一パッケージ・挙動不変）。
 internal val emptyBreakdown: Map<String, Int> = MirrorKeys.all.associateWith { 0 }
 
+/** [回数を揃える] 適用前に見せる前後比較（件数のみ。勤務表本体は ViewModel が保持）。 */
+data class FairPreviewUi(
+    val fairBefore: Int, val fairAfter: Int,
+    val c1Before: Int, val c1After: Int,
+    val totalBefore: Int, val totalAfter: Int,
+    val moves: Int, val timedOut: Boolean,
+)
+
 data class UiState(
     val loaded: Boolean = false,
     val canUndo: Boolean = false,
@@ -32,6 +40,8 @@ data class UiState(
     val fixSuggestions: List<com.magi.app.v6.FixSuggestion> = emptyList(),  // [改善提案] 違反を減らす1手（変更/交換）
     val fixSearching: Boolean = false,                                       // 改善手を探索中
     val fixFocusName: String = "",                                           // 絞り込み対象スタッフ名（空=全体）
+    val fairRunning: Boolean = false,                                        // [回数を揃える] 計算中
+    val fairPreview: FairPreviewUi? = null,                                  // [回数を揃える] 適用前の前後比較
     val logs: List<String> = emptyList(),
     val iters: Long = 0,
     val itersPerSec: Long = 0,
