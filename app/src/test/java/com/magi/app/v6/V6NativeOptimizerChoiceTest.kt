@@ -36,7 +36,7 @@ class V6NativeOptimizerChoiceTest {
         assertEquals(AcceptMode.SA, V6NativeOptimizer.roleAcceptFor(0))   // W0 ベースライン
         assertEquals(AcceptMode.SA, V6NativeOptimizer.roleAcceptFor(1))
         assertEquals(AcceptMode.GREAT_DELUGE, V6NativeOptimizer.roleAcceptFor(2))
-        assertEquals(AcceptMode.SA, V6NativeOptimizer.roleAcceptFor(3))
+        assertEquals(AcceptMode.LAM_ADAPTIVE, V6NativeOptimizer.roleAcceptFor(3))   // W3=Lam適応冷却
         assertEquals(AcceptMode.GREAT_DELUGE, V6NativeOptimizer.roleAcceptFor(4))
     }
 }
