@@ -42,6 +42,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # 既定の packages='tools platform-tools' は cmdline-tools 16.0 で 'tools' が消え失敗する
+        with:
+          packages: 'platform-tools'
 
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
